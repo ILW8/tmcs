@@ -2,7 +2,7 @@
 
 Date: 2026-10-23
 Owner: ILW8 (product owner; confirm every scope change with them)
-Status: draft, awaiting owner approval
+Status: approved by the owner on 2026-10-23
 
 ## 1. Intent
 
