@@ -10,6 +10,9 @@ internal static partial class User32
     /// <summary><c>LVM_SETIMAGELIST</c>: wParam is an <c>LVSIL_*</c> value, lParam the <c>HIMAGELIST</c>.</summary>
     public const uint LvmSetImageList = 0x1003;
 
+    /// <summary><c>LVM_GETNEXTITEM</c>: wParam is the item to start after (-1 for the first), lParam the <c>LVNI_*</c> flags; returns the item or -1.</summary>
+    public const uint LvmGetNextItem = 0x100C;
+
     /// <summary><c>LVM_GETITEMRECT</c>: wParam is the item, lParam a <see cref="NativeRect"/> whose <c>Left</c> holds an <c>LVIR_*</c> value.</summary>
     public const uint LvmGetItemRect = 0x100E;
 
@@ -21,6 +24,30 @@ internal static partial class User32
 
     /// <summary><c>LVM_GETTOPINDEX</c>.</summary>
     public const uint LvmGetTopIndex = 0x1027;
+
+    /// <summary><c>LVM_SETITEMSTATE</c>: wParam is the item (-1 for every item), lParam an <see cref="LvItem"/> with <c>State</c> and <c>StateMask</c>.</summary>
+    public const uint LvmSetItemState = 0x102B;
+
+    /// <summary><c>LVM_GETITEMSTATE</c>: wParam is the item, lParam the state mask; returns the item's state bits under the mask.</summary>
+    public const uint LvmGetItemState = 0x102C;
+
+    /// <summary><c>LVM_GETSELECTEDCOUNT</c>.</summary>
+    public const uint LvmGetSelectedCount = 0x1032;
+
+    /// <summary><c>LVM_SETSELECTIONMARK</c>: lParam is the item that anchors Shift-selection.</summary>
+    public const uint LvmSetSelectionMark = 0x1043;
+
+    /// <summary><c>LVNI_FOCUSED</c>.</summary>
+    public const nint LvniFocused = 0x1;
+
+    /// <summary><c>LVNI_SELECTED</c>.</summary>
+    public const nint LvniSelected = 0x2;
+
+    /// <summary><c>LVIS_FOCUSED</c>.</summary>
+    public const uint LvisFocused = 0x1;
+
+    /// <summary><c>LVIS_SELECTED</c>.</summary>
+    public const uint LvisSelected = 0x2;
 
     /// <summary><c>LVSIL_SMALL</c>.</summary>
     public const nint LvsilSmall = 1;
@@ -48,6 +75,21 @@ internal static partial class User32
 
     /// <summary><c>HDF_SORTUP</c>.</summary>
     public const int HdfSortUp = 0x400;
+
+    /// <summary><c>MF_STRING</c> (0), <c>MF_BYCOMMAND</c> (0) and <c>MF_ENABLED</c> (0) are the defaults these build on.</summary>
+    public const uint MfGrayed = 0x1;
+
+    /// <summary><c>MF_POPUP</c>: the item's id is a submenu handle.</summary>
+    public const uint MfPopup = 0x10;
+
+    /// <summary><c>MF_SEPARATOR</c>.</summary>
+    public const uint MfSeparator = 0x800;
+
+    /// <summary><c>TPM_RIGHTBUTTON</c>: items can be chosen with either mouse button.</summary>
+    public const uint TpmRightButton = 0x2;
+
+    /// <summary><c>TPM_RETURNCMD</c>: return the chosen item's id instead of posting <c>WM_COMMAND</c>.</summary>
+    public const uint TpmReturnCmd = 0x100;
 
     /// <summary><c>POINT</c>.</summary>
     [StructLayout(LayoutKind.Sequential)]
@@ -85,6 +127,27 @@ internal static partial class User32
         public uint State;
     }
 
+    /// <summary><c>LVITEMW</c>. <see cref="Mask"/> says which fields a get fills or a set applies.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct LvItem
+    {
+        public uint Mask;
+        public int Item;
+        public int SubItem;
+        public uint State;
+        public uint StateMask;
+        public nint Text;
+        public int TextMax;
+        public int Image;
+        public nint Param;
+        public int Indent;
+        public int GroupId;
+        public uint Columns;
+        public nint ColumnIndexes;
+        public nint ColumnFormats;
+        public int Group;
+    }
+
     /// <summary><c>HDHITTESTINFO</c>. <see cref="Point"/> is in header client coordinates.</summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct HdHitTestInfo
@@ -105,6 +168,9 @@ internal static partial class User32
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
     public static partial nint SendMessage(nint hwnd, uint msg, nint wParam, ref HdHitTestInfo lParam);
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
+    public static partial nint SendMessage(nint hwnd, uint msg, nint wParam, ref LvItem lParam);
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -140,4 +206,30 @@ internal static partial class User32
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool DestroyIcon(nint icon);
+
+    /// <returns>An empty menu bar, or 0 on failure. Destroy it with <see cref="DestroyMenu"/> unless a window owns it.</returns>
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint CreateMenu();
+
+    /// <returns>An empty popup menu, or 0 on failure. Destroy it with <see cref="DestroyMenu"/> unless a menu owns it.</returns>
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint CreatePopupMenu();
+
+    /// <param name="id">The item's command id, or the submenu handle when <paramref name="flags"/> has <see cref="MfPopup"/>.</param>
+    [LibraryImport("user32.dll", EntryPoint = "AppendMenuW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AppendMenu(nint menu, uint flags, nuint id, string? text);
+
+    /// <returns>The item's previous state, or -1 when the item does not exist.</returns>
+    [LibraryImport("user32.dll")]
+    public static partial int EnableMenuItem(nint menu, uint item, uint flags);
+
+    /// <summary>Also destroys the menu's submenus.</summary>
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DestroyMenu(nint menu);
+
+    /// <returns>With <see cref="TpmReturnCmd"/>: the chosen item's id, or 0 when the menu was dismissed.</returns>
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial int TrackPopupMenuEx(nint menu, uint flags, int x, int y, nint owner, nint parameters);
 }
