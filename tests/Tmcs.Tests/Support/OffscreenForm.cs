@@ -1,4 +1,4 @@
-namespace Tmcs.Tests;
+namespace Tmcs.Tests.Support;
 
 /// <summary>
 /// A form that is shown far off-screen, never activated, and absent from the taskbar and Alt-Tab.
