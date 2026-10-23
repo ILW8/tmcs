@@ -226,7 +226,7 @@ These run at the end of every milestone, not just the first.
 2. **No backlog stall**: after 30 minutes of churn on the Performance tab, switching to Details takes under about 100 ms.
 3. **True pause**: tmcs's CPU time doesn't advance meaningfully over 5 paused minutes, and no sampling calls happen.
 4. **Idle cost**: at Normal speed, tmcs's CPU use on each tab is no higher than the stock Task Manager's on the same tab, measured on this machine.
-5. **Icon dedup**: run 50 copies of the same exe and confirm one icon slot. Let them exit and confirm the slot is reclaimed. A diagnostics switch such as `--diag`, which logs internal counts like icon slots and cache sizes to a file, is acceptable as a test aid. It isn't a user feature.
+5. **Icon dedup**: run 50 copies of the same exe and confirm one icon slot. Let them exit and confirm the slot is reclaimed. A diagnostics mode that logs internal counts like icon slots and cache sizes to a file is acceptable as a test aid. It isn't a user feature. It is switched on by environment variables (`TMCS_DIAG`, `TMCS_SCENARIO`), not command-line flags, at the owner's request.
 6. **Fidelity**: the owner's side-by-side visual check against Task Manager for each built component.
 
 ## 10. Later (not in v1; each needs the owner's go-ahead)

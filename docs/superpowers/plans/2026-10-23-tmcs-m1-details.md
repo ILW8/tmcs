@@ -9,7 +9,7 @@
 - Per-process static info is queried once. Exited processes leave the table, and release their icon, on the same tick no matter which view is showing.
 - The Details list is a virtual-mode `ListView` subclass. It shares one slot-reusing native image list owned by a path-keyed `IconStore`.
 - Menus are native Win32 menus, so they match Task Manager.
-- A `--diag`/`--scenario` test mode lets tmcs switch its own view state and log its own memory and handle counts, so the soak needs no screen automation.
+- A test mode, switched on by the `TMCS_DIAG` / `TMCS_SCENARIO` environment variables (owner's choice: environment variables, not command-line flags), lets tmcs switch its own view state and log its own memory and handle counts, so the soak needs no screen automation.
 
 **Tech Stack:** C# 14 / .NET 10 (SDK 10.0.204), WinForms, `LibraryImport` P/Invoke (ntdll, kernel32, advapi32, user32, shell32, comctl32, uxtheme), System.Text.Json, xUnit 2.9.3, PowerShell 7 for tools.
 
@@ -610,7 +610,10 @@ public void Cpu_format(double p, string s) => Assert.Equal(s, ValueFormat.Cpu(p)
 **Interfaces:**
 - Consumes: everything above.
 - Produces:
-  - `sealed record LaunchOptions(string? DiagPath, string? Scenario)`, with `static LaunchOptions Parse(string[] args)` for `--diag <path>` and `--scenario <spec>`. Unknown arguments are ignored. `bool IsTestMode => DiagPath != null`.
+  - `sealed record LaunchOptions(string? DiagPath, string? Scenario)`, with `bool IsTestMode => DiagPath != null`.
+    - `const string DiagVariable = "TMCS_DIAG"` (CSV output path) and `const string ScenarioVariable = "TMCS_SCENARIO"` (scenario spec). There are no command-line flags; tmcs ignores its arguments.
+    - `static LaunchOptions FromEnvironment(Func<string, string?> get)`: blank or whitespace values count as unset.
+    - `static LaunchOptions FromProcessEnvironment()`: calls `FromEnvironment(Environment.GetEnvironmentVariable)`, then deletes both variables from tmcs's own environment (`Environment.SetEnvironmentVariable(name, null)`) so processes tmcs starts later don't inherit them.
   - `sealed record AppServices(IProcessSnapshotSource Snapshots, IProcessInfoSource Info, IIconLoader Icons, nint GenericIcon, ISampleTimer Timer, SettingsStore Store, LaunchOptions Options)`, with `static AppServices CreateReal(LaunchOptions o)`.
   - `MainForm(AppServices services)`:
     - Owns the `SampleClock`, `ProcessTable`, `IconStore`, `NativeImageList` (icon size from `GetSystemMetricsForDpi(SM_CXSMICON 49, DeviceDpi)`), `HungWindowScanner` and `DetailsView`.
@@ -631,12 +634,13 @@ public void Cpu_format(double p, string s) => Assert.Equal(s, ValueFormat.Cpu(p)
   - `Program`:
     - Not in test mode: a named mutex `Local\tmcs.single-instance`. If it's already held, find the other `tmcs` process's main window, `ShowWindow(SW_RESTORE)` + `SetForegroundWindow`, and exit.
     - Elevated: `ProcessInfoSource.TryEnableDebugPrivilege()`.
-    - `Application.Run(new MainForm(AppServices.CreateReal(opts)))`.
+    - `var opts = LaunchOptions.FromProcessEnvironment();` then `Application.Run(new MainForm(AppServices.CreateReal(opts)))`.
 
 - [ ] **Step 1: Write the failing tests.**
   - `LaunchOptionsTests`:
-    - `Parses_diag_and_scenario`: `["--diag", "c:\\t\\d.csv", "--scenario", "details:1"]` → both set, `IsTestMode`.
-    - `Defaults_are_null`: `[]` → both null.
+    - `Reads_diag_and_scenario_variables`: a dictionary-backed `get` with `TMCS_DIAG = c:\t\d.csv` and `TMCS_SCENARIO = details:1` → both set, `IsTestMode`.
+    - `Unset_or_blank_variables_are_null`: an empty dictionary → both null and `!IsTestMode`; `TMCS_DIAG = "  "` → `DiagPath == null`.
+    - `Process_environment_variables_are_cleared_after_reading`: set both variables on the test process, call `FromProcessEnvironment()` → values returned, and `Environment.GetEnvironmentVariable("TMCS_DIAG") == null` afterwards.
   - `MainFormTests` (STA, off-screen, fake snapshot source returning a mutable list, `FakeInfo`, fake icon loader, `FakeTimer`, temp-file `SettingsStore`):
     - `First_sample_populates_details_rows`: show → `Details.DisplayedRows.Count == 3`.
     - `Speed_menu_command_changes_clock`: send `WM_COMMAND` with `CommandIds.SpeedLow` → `Clock.Speed == Low`, and `FakeTimer.IntervalMs == 4000`.
@@ -730,12 +734,12 @@ public void Cpu_format(double p, string s) => Assert.Equal(s, ValueFormat.Cpu(p)
   - Tell the owner in chat first: a tmcs window will sit behind their other windows for about 50 minutes and won't take focus. Wait for their OK.
   - Run `dotnet build -c Debug`.
   - Start `pwsh -File tools/churn.ps1 -Parallel 8 -Minutes 52` in the background.
-  - Run `src/Tmcs/bin/Debug/net10.0-windows/win-x64/tmcs.exe --diag artifacts/soak/m1-debug.csv --scenario "details:10,minimized:30,details:3,paused:5,details:2"` in the background.
+  - In the background, run tmcs with the test-mode variables set only for that process: `pwsh -NoProfile -Command '$env:TMCS_DIAG = "$PWD/artifacts/soak/m1-debug.csv"; $env:TMCS_SCENARIO = "details:10,minimized:30,details:3,paused:5,details:2"; & ./src/Tmcs/bin/Debug/net10.0-windows/win-x64/tmcs.exe | Out-Null'`. Piping to `Out-Null` makes pwsh wait until tmcs exits.
   - When tmcs exits, run `pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m1-debug.csv`. Expect exit code 0.
   - The `minimized:30 → details` switch covers spec test 2, no backlog stall. The paused segment covers spec test 3, true pause.
 - [ ] **Step 4: Elevated soak (published build).**
   - Ask the owner in chat for OK to show one UAC prompt.
-  - Then run `Start-Process artifacts/publish/tmcs.exe -Verb RunAs -ArgumentList '--diag', "$PWD/artifacts/soak/m1-elevated.csv", '--scenario', 'details:10,minimized:10,details:3,paused:5,details:2'` with churn running.
+  - Then, with churn running, launch through an elevated wrapper. A UAC-elevated process doesn't inherit the caller's environment variables, so the elevated pwsh sets them itself and then starts tmcs: `Start-Process pwsh -Verb RunAs -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "`$env:TMCS_DIAG='$PWD\artifacts\soak\m1-elevated.csv'; `$env:TMCS_SCENARIO='details:10,minimized:10,details:3,paused:5,details:2'; & '$PWD\artifacts\publish\tmcs.exe' | Out-Null"`. That is one UAC prompt.
   - Run `soak-report.ps1` on the CSV. Expect exit code 0.
 - [ ] **Step 5: Idle cost (spec test 4).**
   - From the elevated CSV's `details` segments, compute tmcs CPU ms per minute.
