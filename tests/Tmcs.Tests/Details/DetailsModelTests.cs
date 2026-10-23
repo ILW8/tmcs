@@ -81,6 +81,31 @@ public class DetailsModelTests : IDisposable
         Assert.Equal(0, DetailsColumns.Get(DetailsColumn.CommandLine).Compare(R(1, "a"), R(2, "a")));
     }
 
+    [Fact]
+    public void Text_compares_do_not_allocate()
+    {
+        var a = new ProcessRow(new ProcessIdentity(1, 1), "Alpha", 0, new ProcessStaticInfo(null, "app /a", @"PC\a", UacVirtualization.Unknown));
+        var b = new ProcessRow(new ProcessIdentity(2, 1), "alpha2", 0, new ProcessStaticInfo(null, "app /b", @"PC\b", UacVirtualization.Unknown));
+        foreach (var id in new[] { DetailsColumn.Name, DetailsColumn.UserName, DetailsColumn.CommandLine })
+        {
+            var compare = DetailsColumns.Get(id).Compare;
+            for (var i = 0; i < 100; i++) compare(a, b);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 1000; i++) compare(a, b);
+            Assert.True(GC.GetAllocatedBytesForCurrentThread() == before, id.ToString());
+        }
+    }
+
+    [Fact]
+    public void Sort_allocates_a_constant_amount_regardless_of_row_count()
+    {
+        var rows = Enumerable.Range(1, 500).Select(i => R(i, "p" + i % 50)).ToList();
+        RowSorter.Sort(rows, DetailsColumn.Name, descending: false);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        RowSorter.Sort(rows, DetailsColumn.Name, descending: true);
+        Assert.InRange(GC.GetAllocatedBytesForCurrentThread() - before, 0, 1024);
+    }
+
     [Theory]
     [InlineData(12_641_280, "12,345 K")]
     [InlineData(0, "0 K")]
@@ -171,6 +196,24 @@ public class DetailsModelTests : IDisposable
     {
         Assert.Equal(-1, RowSearch.FindByPrefix([], "a", 0));
         Assert.Equal(-1, RowSearch.FindByPrefix([R(1, "a")], "", 0));
+    }
+
+    [Fact]
+    public void FindByPrefix_starts_at_the_first_row_when_startIndex_is_negative_or_past_the_end()
+    {
+        var rows = new[] { R(1, "chrome.exe"), R(2, "Code.exe"), R(3, "cmd.exe") };
+        Assert.Equal(0, RowSearch.FindByPrefix(rows, "ch", -1));
+        Assert.Equal(0, RowSearch.FindByPrefix(rows, "c", int.MinValue));
+        Assert.Equal(2, RowSearch.FindByPrefix(rows, "cm", 7));
+        Assert.Equal(0, RowSearch.FindByPrefix(rows, "c", 7));
+        Assert.Equal(0, RowSearch.FindByPrefix(rows, "c", 3));
+    }
+
+    [Fact]
+    public void Negative_startIndex_does_not_wrap_from_the_end()
+    {
+        var rows = Enumerable.Range(0, 500).Select(i => R(i, i == 0 || i == 295 ? "match" : "other")).ToList();
+        Assert.Equal(0, RowSearch.FindByPrefix(rows, "match", -1));
     }
 
     [Fact]

@@ -1,6 +1,6 @@
 namespace Tmcs.Details;
 
-/// <summary>The 11 Details columns with their titles and default widths. The delegates are static, so they are built once and never allocate per row.</summary>
+/// <summary>The 11 Details columns with their titles and default widths. The delegates are static and built once, so the comparisons allocate nothing; only the cell text strings are allocated, one per cell read.</summary>
 internal static class DetailsColumns
 {
     static readonly ColumnDef[] Defs =
@@ -45,5 +45,6 @@ internal static class DetailsColumns
 
     public static ColumnDef Get(DetailsColumn id) => Defs[(int)id];
 
-    static int CompareText(string a, string b) => StringComparer.CurrentCultureIgnoreCase.Compare(a, b);
+    // string.Compare with a StringComparison does not allocate; the StringComparer.CurrentCultureIgnoreCase property creates a new comparer on every access.
+    static int CompareText(string a, string b) => string.Compare(a, b, StringComparison.CurrentCultureIgnoreCase);
 }
