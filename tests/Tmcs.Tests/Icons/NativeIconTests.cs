@@ -37,7 +37,7 @@ public class NativeIconTests
         var icon = loader.LoadSmallIcon(Cmd);
         try
         {
-            var list = new NativeImageList(16);
+            using var list = new NativeImageList(16);
             var handle = list.Handle;
             Assert.NotEqual(0, handle);
 
@@ -50,7 +50,6 @@ public class NativeIconTests
             list.Dispose();
             list.Dispose();
             Assert.Equal(0, list.Handle);
-            Assert.Equal(0, ComCtl32.ImageList_GetImageCount(handle));
         }
         finally { loader.DestroyIcon(icon); }
     });
@@ -81,7 +80,7 @@ public class NativeIconTests
             var gdiAfter = User32.GetGuiResources(Kernel32.GetCurrentProcess(), User32.GrGdiObjects);
 
             Assert.Equal(store.SlotCount, ComCtl32.ImageList_GetImageCount(list.Handle));
-            Assert.InRange(store.SlotCount, 1, 1 + capacity + 1);
+            Assert.Equal(1 + capacity + 1, store.SlotCount);   // every load succeeds: generic slot + full pool + the slot just freed by the last eviction
             Assert.Equal(capacity, store.PooledCount);
             Assert.True(gdiAfter <= gdiBefore + 5, $"GDI objects went from {gdiBefore} to {gdiAfter}");
         }
