@@ -234,6 +234,7 @@ These run at the end of every milestone, not just the first.
 - **Processes tab**, grouped (Apps / Background processes / Windows processes, heat-map columns).
 - **Live filter box** for the Details list.
 - **CPU topology view**: show which logical processors belong to which CCD (the 7950X has 2) and which logical processor is another's SMT sibling. Likely source: `GetLogicalProcessorInformationEx` (`RelationProcessorCore` for SMT siblings; `RelationCache` L3 groups for CCDs).
+- **Replace Task Manager**: an opt-in "replace / restore" switch so Ctrl+Shift+Esc and the taskbar's "Task Manager" item open tmcs instead of Taskmgr.exe. It works like Process Explorer's option, which redirects launches of taskmgr.exe. This is a persistent system setting: only change it with the owner's OK at the time, and always offer a clean restore.
 
 ## 11. Left to the builder
 
