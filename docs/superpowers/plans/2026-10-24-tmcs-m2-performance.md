@@ -72,6 +72,42 @@ The spec doesn't name these, but each is likely to happen on the owner's machine
    - Nothing throws; empty graphs are skipped.
    - Tests: Task 4 (`Tiny_bounds_paint_nothing_and_do_not_throw`, added in Task 11) and Task 11 (`Painting_at_tiny_sizes_does_not_throw`, which covers every pane as it is built).
 
+## Calls for the owner to check
+
+Decisions this plan makes that the spec, the owner and the captures don't settle. Each task marks them "my call". Task 14 and Task 20 put this list in front of the owner.
+
+- **Graphs:**
+  - The x axis is time-based: a 59-s window, which is Task Manager's 60 samples exactly at Normal. At High it shows 119 points, at Low 16, and it freezes while paused (Task 2).
+  - Each graph type keeps a fixed grid step: CPU 10 samples, GPU engines 4, the rest 3 (Task 11).
+  - Auto-scale picks the smallest step at or above the visible maximum, from fixed lists, with a floor of 100 Kbps or 100 KB/s (Task 12).
+  - The inner scale marker (`7 MB/s`, `450 Kbps`) is left out (Tasks 16, 17).
+  - The Disk transfer rate graph is a fixed 67 px tall (Task 16).
+  - The CPU grid's shape for processor counts other than 32 (Task 13).
+- **Numbers:**
+  - Network rates use K = 1000 (Task 3).
+  - Percentages and the GPU temperature round half away from zero (Task 3).
+  - Each GPU engine graph shows the busiest node of that type, e.g. the max of the six Copy nodes (Task 9).
+  - The memory composition segments round to whole pixels, and Free takes the remainder (Task 15).
+- **Data:**
+  - No D3D device is ever created; the DirectX version comes from the registry's DirectX cache (Task 9).
+  - Up time comes from the system's boot time; Virtualization shows only Enabled or Disabled (Task 5).
+  - Several drive letters on one disk are joined by a space; `Removable` follows the `RemovableMedia` flag (Task 7).
+  - Wi-Fi signal bars are quality / 20 + 1, at most 5 (Task 8).
+  - A failed process snapshot skips the whole tick, devices included (Task 10).
+- **Rows left out when their value is unknown:** SMBIOS rows (Task 15), `Formatted` at 0 (Task 16), IP addresses and Wi-Fi rows (Task 17). The DNS row's place on a Wi-Fi pane (Task 17).
+- **Sidebar:**
+  - `Show hidden adapters` isn't remembered between runs, and N counts only adapters that are present (Task 12).
+  - `Hide` is a check item, so it also un-hides (Task 12).
+  - Up and Down move the selection (Task 12).
+  - When the selected device goes, the selection moves to a same-named device of the same kind, else to the entry above, else to CPU (Task 12).
+  - The GPU entry's temperature text is black (Task 12).
+- **Look:**
+  - The empty 48-px band at the bottom is kept (Task 11).
+  - The GPU engine names have no chevron (Task 18).
+  - The Wi-Fi signal glyph is tmcs's own drawing (Task 17).
+  - No tooltips on the memory composition bar or the slots (Task 15).
+- **Test mode:** `paused` now pauses on the CPU pane instead of the Details tab (Task 19).
+
 ---
 
 ### Task 1: M1 follow-ups: ignore startup hooks, tests on comctl32 v6
@@ -204,7 +240,7 @@ Read the "Formats" section of the data-sources reference first. Every example be
   - `string Milliseconds(double ms)`: `Number`, then ` ms`.
   - `string Celsius(double degrees)`: rounded half away from zero, then ` °C` (my call; the GPU reference couldn't tell rounding from truncation).
 
-- [ ] **Step 1: Write the failing tests** (set `CultureInfo.CurrentCulture` to `en-US` in each test):
+- [ ] **Step 1: Write the failing tests.** The class sets `CultureInfo.CurrentCulture` to `en-US` in its constructor and restores the saved culture in `Dispose`, as `DetailsModelTests` does, so no culture leaks to other tests on the same thread:
 
 ```csharp
 const double KiB = 1024, MiB = KiB * 1024, GiB = MiB * 1024;
@@ -642,7 +678,7 @@ Read the whole GPU data-sources reference first: its traps decide the design. In
       4. A disk or adapter whose `Failed` is set marks its kind for a rescan in the next sample.
     - Hidden adapters are sampled like the others, so "Show hidden adapters" shows real graphs. Only the sidebar filters them out.
     - Nothing runs on its own. Only `MainForm`'s sample calls the model, so Paused reads nothing, and a rescan happens only at the start of a sample.
-    - With no device change, `Sample` allocates nothing.
+    - With no device change and wired adapters only, `Sample` allocates nothing. A Wi-Fi adapter's `ReadWifi` allocates one small `WifiInfo` per sample; that short-lived garbage is accepted (my call).
   - `DiskDevice.Update(DiskInfo)`, `NetworkDevice.Update(AdapterInfo)` and `GpuDevice.Update(GpuInfo)` replace `Info`, which becomes `{ get; private set; }`. The history and the rate baseline are kept.
   - `MainForm`:
     - `internal PerformanceModel Performance`, created from `services.Devices` and disposed with the form.
@@ -666,7 +702,7 @@ Read the whole GPU data-sources reference first: its traps decide the design. In
       - A second sample adds none.
     - `Gpu_luid_change_replaces_the_gpu` (Review Focus 2): `ReadAll` fails and the fake now lists the GPU under LUID 0x2000. After the next sample the GPU's key is `gpu:2000`.
     - `Failing_sources_never_throw`: every read fails and no GPU is listed. 100 samples run, the keys are `cpu`, `memory`, then the disks and adapters, and every history stays empty.
-    - `Steady_sampling_does_not_allocate`: after 3 warm-up samples, 100 samples change `GC.GetAllocatedBytesForCurrentThread()` by 0.
+    - `Steady_sampling_does_not_allocate`: the fake adapters are wired. After 3 warm-up samples, 100 samples change `GC.GetAllocatedBytesForCurrentThread()` by 0.
   - `MainFormTests`:
     - `Every_sample_feeds_the_model_on_any_tab_and_minimized`: fire the timer once on each tab and once minimized. `Performance.Cpu.History.Count` grows by one per fire.
     - `Paused_reads_no_devices_and_refresh_now_reads_once`: set Paused; the fake CPU's read count doesn't change. F5 adds exactly one read.
@@ -737,6 +773,7 @@ Read sections 1, 5 and 7 of the look reference first.
         - Table keys in Label font, gray; table values in Label font, black.
       - Height-flex helpers: `ChartBottom = info top − 10`; a graph's top caption sits 16 px above it; the next graph's top caption sits 19 px below the previous graph's bottom captions.
     - When a graph's rectangle comes out narrower or shorter than 3 px, it is skipped. Text is clipped. Nothing throws at any size (Review Focus 5).
+    - `internal void PaintTo(Graphics g)` does the whole paint for the current `ClientSize`. `OnPaint` calls it, and so do the tests, since `DrawToBitmap` refuses an empty control.
   - `sealed class PerformanceView : Control`, docked in the Performance tab page.
     - Constructor: `PerformanceView(PerformanceModel model, AppSettings settings)`.
     - Layout, with the origin at Task Manager's tab content (window (8, 81)):
@@ -775,6 +812,7 @@ Read sections 1, 5 and 7 of the look reference first.
       - Label font: `Utilization` 53, `Logical processors:` 100.
       - Value font: `4.42 GHz` 79, `25:17:28:41` 100, `38.0 GB (3.6 GB)` 140.
       - If a different flag set gives a constant offset from these, fix the flags. Never change the expected numbers.
+      - If no flag set matches all five, stop and report the measured widths to the owner instead of trying more.
     - `Layout_matches_task_manager_at_96_dpi`:
       - View at 1278×623: the sidebar slot is (4, 7, 214, 568) and the pane is (226, 0, 1052, 575).
       - The view's pixel at (218, 17) is D9D9D9, and at (218, 16) it is white.
@@ -784,10 +822,11 @@ Read sections 1, 5 and 7 of the look reference first.
     - `Dpi_changes_recreate_fonts_and_keep_gdi_flat` (Review Focus 4):
       - `ApplyDpi` alternates 96 and 144 fifty times, painting after each.
       - At 144 the `Title` font is 42 px.
+      - At 144, `PaneText.Width("Utilization", Fonts.Label)` is within 1 px of 1.5 × its width at 96, not 2.25 ×. If the renderer scales the font a second time, create the fonts in points and let it scale them.
       - The GDI and USER counts after the last round equal those after the first.
     - `Painting_creates_no_gdi_or_user_objects`: paint the view 1000 times; the counts stay the same.
     - `Painting_at_tiny_sizes_does_not_throw` (Review Focus 5):
-      - Paint the view, and every pane it holds, at 400×300, 100×50, 1×1 and 0×0.
+      - Set the view's and every pane's `ClientSize` to 400×300, 100×50, 1×1 and 0×0, and call `PaintTo` with a `Graphics` from a fixed 1×1 bitmap.
       - Do it for a device of each kind from `FakeDeviceSources`.
       - It covers the panes Tasks 13 and 15–18 add, as they replace the `TitlePane`s.
   - `MainFormTests`:
@@ -843,7 +882,7 @@ Read section 2 of the look reference first.
 
     - **Selection:**
       - `string SelectedKey`, which starts at `cpu`, and `event Action? SelectionChanged`. The view shows the selected device's pane.
-      - A click selects an entry. Up and Down select the previous and next entry and scroll it into view, as Task Manager's sidebar does (my call).
+      - A click selects an entry. Up and Down select the previous and next entry and scroll it into view, as Task Manager's sidebar does (my call). That needs `ControlStyles.Selectable` and an `IsInputKey` override for the arrow keys.
       - `bool SelectFirst(DeviceKind kind)` selects the first listed entry of that kind and returns false when there is none (Task 19).
       - **When the selected device leaves the list** (removed or hidden), the selection moves on the same rebuild:
         - first to an entry of the same kind with the same `Title` and `Subtitle` (a GPU whose LUID changed after a driver restart, or a re-created adapter);
@@ -932,7 +971,7 @@ Read the "CPU per-LP grid" part of section 4 and section 7 of the look reference
 - [ ] **Step 2: Inspect.** Run the Rider inspections (`lint_files`) on every file changed since commit `9c0a16c`, and fix what they report in those files.
 - [ ] **Step 3: Write the checkpoint section** of the results file:
   - What the owner should try.
-  - Every "my call" in this plan's Tasks 1–13, one line each, so the owner can check them while trying.
+  - The entries of this plan's "Calls for the owner to check" that belong to Tasks 1–13, so the owner can check them while trying.
 - [ ] **Step 4: Commit** with message `docs: M2 checkpoint notes`.
 - [ ] **Step 5: Hand over, then stop.**
   - Tell the owner the Debug build is at `src/Tmcs/bin/Debug/net10.0-windows/win-x64/tmcs.exe`. It is `asInvoker`, so it starts without a UAC prompt, and nothing on the Performance tab needs elevation.
