@@ -31,6 +31,17 @@ public partial class ProcessListViewTests
     private const int LvsilSmall = 1;
     private const int GwlStyle = -16;
     private const int LvsShareImageLists = 0x40;
+    private const uint WmNotify = 0x004E;
+    private const int LvnGetDispInfoW = -177;
+    private const int NmCustomDraw = -12;
+    private const uint LvifText = 0x1;
+    private const uint LvifState = 0x8;
+    private const uint LvifIndent = 0x10;
+    private const int LvnOdCacheHint = -113;
+    private const uint CddsPrePaint = 0x1;
+    private const uint CddsItemPrePaint = 0x10001;
+    private const nint CdrfNewFont = 0x2;
+    private const nint CdrfNotifyItemDraw = 0x20;
 
     /// <summary><c>LVITEMW</c>.</summary>
     [StructLayout(LayoutKind.Sequential)]
@@ -51,6 +62,22 @@ public partial class ProcessListViewTests
         public nint ColumnIndexes;
         public nint ColumnFormats;
         public int Group;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NmHdr
+    {
+        public nint HwndFrom;
+        public nuint IdFrom;
+        public int Code;
+    }
+
+    /// <summary><c>NMLVDISPINFOW</c>.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NmLvDispInfo
+    {
+        public NmHdr Hdr;
+        public LvItem Item;
     }
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
@@ -215,6 +242,154 @@ public partial class ProcessListViewTests
         Assert.Equal(longText[..text.Length], text);
     });
 
+    // The handler reads the notification through these, so a field in the wrong place would read or write the wrong memory.
+    [Fact]
+    public unsafe void Notify_structs_have_the_x64_layout()
+    {
+        Assert.Equal(24, sizeof(User32.NmHdr));
+        Assert.Equal(16, (int)Marshal.OffsetOf<User32.NmHdr>(nameof(User32.NmHdr.Code)));
+        Assert.Equal(88, sizeof(User32.LvItem));
+        Assert.Equal(24, (int)Marshal.OffsetOf<User32.LvItem>(nameof(User32.LvItem.Text)));
+        Assert.Equal(32, (int)Marshal.OffsetOf<User32.LvItem>(nameof(User32.LvItem.TextMax)));
+        Assert.Equal(36, (int)Marshal.OffsetOf<User32.LvItem>(nameof(User32.LvItem.Image)));
+        Assert.Equal(48, (int)Marshal.OffsetOf<User32.LvItem>(nameof(User32.LvItem.Indent)));
+        Assert.Equal(64, (int)Marshal.OffsetOf<User32.LvItem>(nameof(User32.LvItem.ColumnIndexes)));
+        Assert.Equal(24 + 88, sizeof(User32.NmLvDispInfo));
+        Assert.Equal(24, (int)Marshal.OffsetOf<User32.NmLvDispInfo>(nameof(User32.NmLvDispInfo.Item)));
+        Assert.Equal(80, sizeof(User32.NmCustomDraw));
+        Assert.Equal(24, (int)Marshal.OffsetOf<User32.NmCustomDraw>(nameof(User32.NmCustomDraw.DrawStage)));
+        Assert.Equal(56, (int)Marshal.OffsetOf<User32.NmCustomDraw>(nameof(User32.NmCustomDraw.ItemSpec)));
+        Assert.Equal(136, sizeof(User32.NmLvCustomDraw));
+        Assert.Equal(80, (int)Marshal.OffsetOf<User32.NmLvCustomDraw>(nameof(User32.NmLvCustomDraw.ClrText)));
+        Assert.Equal(84, (int)Marshal.OffsetOf<User32.NmLvCustomDraw>(nameof(User32.NmLvCustomDraw.ClrTextBk)));
+    }
+
+    [Fact]
+    public void Cell_source_answers_text_and_image_requests_instead_of_RetrieveVirtualItem() => Sta.Run(() =>
+    {
+        var requests = 0;
+        using var form = Host(out var list, row: i =>
+        {
+            requests++;
+            return new ListViewItem(Cells(i)) { ImageIndex = 1 };
+        });
+        var cells = new FakeCells();
+        list.CellSource = cells;
+        form.ShowOffscreen();
+
+        Assert.Equal("3:2", ItemText(list, 3, 2, 64));
+        Assert.Equal("4:0", ItemText(list, 4, 0, 64));
+        Assert.Equal(13, ItemImage(list, 3));
+        Assert.Equal(0, requests);
+        Assert.True(cells.Served >= 2, $"the cell source served {cells.Served} cells");
+
+        list.CellSource = null; // WinForms' own handling again
+        Assert.Equal("a", ItemText(list, 3, 1, 64));
+        Assert.Equal(1, ItemImage(list, 3));
+        Assert.True(requests > 0, "without a cell source the list did not ask RetrieveVirtualItem");
+    });
+
+    [Fact]
+    public unsafe void Cell_text_is_cut_to_cchTextMax_and_nothing_past_it_is_written() => Sta.Run(() =>
+    {
+        using var form = Host(out var list);
+        list.CellSource = new FakeCells("0123456789");
+        form.ShowOffscreen();
+
+        foreach (var max in new[] { int.MinValue, -1, 0, 1, 2, 10, 11, 12, 64 })
+        {
+            var buffer = new char[80];
+            Array.Fill(buffer, '￿');
+            fixed (char* p = buffer) DispInfo(form, list, new LvItem { Mask = LvifText, Item = 1, SubItem = 2, Text = (nint)p, TextMax = max });
+
+            var written = max <= 0 ? 0 : Math.Min(10, max - 1);
+            Assert.Equal("0123456789"[..written], new string(buffer, 0, written));
+            var untouched = written;
+            if (max > 0) Assert.Equal('\0', buffer[untouched++]);
+            Assert.All(buffer[untouched..], c => Assert.Equal('￿', c));
+        }
+
+        DispInfo(form, list, new LvItem { Mask = LvifText, Item = 1, SubItem = 2, Text = 0, TextMax = 10 }); // no buffer: nothing to write
+    });
+
+    [Fact]
+    public void Cell_source_sets_the_first_columns_image_and_the_indent_and_leaves_the_rest_alone() => Sta.Run(() =>
+    {
+        using var form = Host(out var list);
+        list.CellSource = new FakeCells();
+        form.ShowOffscreen();
+
+        var first = DispInfo(form, list, new LvItem { Mask = LvifImage | LvifIndent | LvifState, Item = 3, State = 0x1234, StateMask = 0xF000, Image = -7, Indent = 5, Param = 99 });
+        Assert.Equal(13, first.Image);
+        Assert.Equal(0, first.Indent);
+        Assert.Equal(0x1234u, first.State);
+        Assert.Equal(0xF000u, first.StateMask);
+        Assert.Equal(99, first.Param);
+
+        Assert.Equal(-7, DispInfo(form, list, new LvItem { Mask = LvifImage, Item = 3, SubItem = 1, Image = -7 }).Image); // sub-items have no image
+        var notAsked = DispInfo(form, list, new LvItem { Mask = LvifState, Item = 3, Image = -7, Indent = 5 });
+        Assert.Equal(-7, notAsked.Image);
+        Assert.Equal(5, notAsked.Indent);
+    });
+
+    // WinForms gives every item the list's text colors at CDDS_ITEMPREPAINT, which also keeps the hot item's text from turning
+    // hot-track blue, but it reads Items[i] for them, a RetrieveVirtualItem per row. With a cell source the list gives the same
+    // answers without reading the item.
+    [Fact]
+    public void Custom_draw_gives_each_row_the_list_colors_without_RetrieveVirtualItem() => Sta.Run(() =>
+    {
+        var requests = 0;
+        using var form = Host(out var list, row: i =>
+        {
+            requests++;
+            return new ListViewItem(Cells(i));
+        });
+        list.ForeColor = Color.FromArgb(0x10, 0x20, 0x30);
+        list.BackColor = Color.FromArgb(0xF0, 0xE0, 0xD0);
+        list.CellSource = new FakeCells();
+        form.ShowOffscreen();
+        requests = 0;
+
+        Assert.Equal(CdrfNotifyItemDraw | CdrfNewFont, CustomDraw(form, list, CddsPrePaint, item: 0).Result); // as WinForms answers
+        var item = CustomDraw(form, list, CddsItemPrePaint, item: 1);
+        Assert.Equal(CdrfNewFont, item.Result);
+        Assert.Equal(0x302010, item.ClrText); // COLORREF: 0x00BBGGRR
+        Assert.Equal(0xD0E0F0, item.ClrTextBk);
+        Assert.Equal(0, requests);
+
+        list.CellSource = null; // WinForms' own custom draw, which reads the item
+        Assert.Equal(CdrfNotifyItemDraw | CdrfNewFont, CustomDraw(form, list, CddsPrePaint, item: 0).Result);
+        var winForms = CustomDraw(form, list, CddsItemPrePaint, item: 1);
+        Assert.True(requests > 0, "without a cell source WinForms did not read the item");
+        Assert.Equal((item.ClrText, item.ClrTextBk), (winForms.ClrText, winForms.ClrTextBk));
+    });
+
+    // WinForms raises CacheVirtualItems for every LVN_ODCACHEHINT, which comes at the start of every paint, with a new event args.
+    // With a cell source there is nothing to cache.
+    [Fact]
+    public unsafe void Cache_hint_is_answered_without_CacheVirtualItems_with_a_cell_source() => Sta.Run(() =>
+    {
+        using var form = Host(out var list);
+        var raised = 0;
+        list.CacheVirtualItems += (_, _) => raised++;
+        list.CellSource = new FakeCells();
+        form.ShowOffscreen();
+        raised = 0;
+
+        var hint = stackalloc int[8]; // NMLVCACHEHINT: NMHDR, then iFrom and iTo
+        var header = (NmHdr*)hint;
+        header->HwndFrom = list.Handle;
+        header->Code = LvnOdCacheHint;
+        hint[6] = 0;
+        hint[7] = 3;
+        User32.SendMessage(form.Handle, WmNotify, 0, (nint)hint);
+        Assert.Equal(0, raised);
+
+        list.CellSource = null;
+        User32.SendMessage(form.Handle, WmNotify, 0, (nint)hint);
+        Assert.Equal(1, raised);
+    });
+
     [Fact]
     public void Header_right_click_raises_HeaderContextMenu_with_column() => Sta.Run(() =>
     {
@@ -283,6 +458,48 @@ public partial class ProcessListViewTests
             base.WndProc(ref m);
             if (m.Msg is (int)LvmSetItemCount or (int)LvmScroll) Seen.Add(((uint)m.Msg, TopIndex(_list)));
         }
+    }
+
+    /// <summary>Cell <c>item:subItem</c>, or <paramref name="text"/> for every cell, cut to fit; image <c>item + 10</c>. Counts the cells it writes.</summary>
+    private sealed class FakeCells(string? text = null) : ICellSource
+    {
+        public int Served { get; private set; }
+
+        public bool TryWriteCell(int item, int subItem, Span<char> destination, out int written)
+        {
+            Served++;
+            var cell = text ?? $"{item}:{subItem}";
+            written = Math.Min(cell.Length, destination.Length);
+            cell.AsSpan(0, written).CopyTo(destination);
+            return written == cell.Length;
+        }
+
+        public int ImageIndex(int item) => item + 10;
+    }
+
+    /// <summary>Sends <c>LVN_GETDISPINFOW</c> the way the list does, through its parent, which reflects it back; returns the item as answered.</summary>
+    private static unsafe LvItem DispInfo(Form parent, ProcessListView list, LvItem item)
+    {
+        var info = new NmLvDispInfo { Hdr = new NmHdr { HwndFrom = list.Handle, Code = LvnGetDispInfoW }, Item = item };
+        User32.SendMessage(parent.Handle, WmNotify, 0, (nint)(&info));
+        return info.Item;
+    }
+
+    /// <summary>
+    /// Sends <c>NM_CUSTOMDRAW</c> through the parent, as the list does, in a zeroed <c>NMLVCUSTOMDRAW</c> whose text colors start
+    /// as <c>0x123456</c>; returns the <c>CDRF_*</c> answer and the text colors as answered.
+    /// </summary>
+    private static unsafe (nint Result, int ClrText, int ClrTextBk) CustomDraw(Form parent, ProcessListView list, uint stage, int item)
+    {
+        var block = stackalloc byte[256]; // NMLVCUSTOMDRAW is 136 bytes on x64
+        var header = (NmHdr*)block;
+        header->HwndFrom = list.Handle;
+        header->Code = NmCustomDraw;
+        *(uint*)(block + 24) = stage; // NMCUSTOMDRAW.dwDrawStage
+        *(nuint*)(block + 56) = (nuint)item; // NMCUSTOMDRAW.dwItemSpec
+        *(int*)(block + 80) = *(int*)(block + 84) = 0x123456; // clrText, clrTextBk
+        var result = User32.SendMessage(parent.Handle, WmNotify, 0, (nint)block);
+        return (result, *(int*)(block + 80), *(int*)(block + 84));
     }
 
     /// <summary>An 800×600 off-screen form filled by a list with five 100 px columns and <paramref name="rows"/> rows.</summary>

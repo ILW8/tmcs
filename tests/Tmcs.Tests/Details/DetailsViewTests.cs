@@ -36,6 +36,16 @@ public partial class DetailsViewTests
     private const uint LvfiWrap = 0x20;
     private const uint MfByPosition = 0x400;
     private const uint MfGrayed = 0x1;
+    private const uint WmPaint = 0x000F;
+    private const uint WmPrintClient = 0x0318;
+    private const nint PrfClient = 0x4;
+    private const uint LvmGetCountPerPage = 0x1028;
+    private const uint LvmSetItemState = 0x102B;
+    private const uint LvmSetHotItem = 0x103C;
+    private const int LvnGetDispInfoW = -177;
+    private const uint LvifText = 0x1;
+    private const uint LvisFocused = 0x1;
+    private const uint LvisSelected = 0x2;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NmHdr
@@ -69,6 +79,14 @@ public partial class DetailsViewTests
         public nint Param;
     }
 
+    /// <summary><c>NMLVDISPINFOW</c>.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NmLvDispInfo
+    {
+        public NmHdr Hdr;
+        public User32.LvItem Item;
+    }
+
     /// <summary><c>LVFINDINFOW</c>.</summary>
     [StructLayout(LayoutKind.Sequential)]
     private unsafe struct LvFindInfo
@@ -88,6 +106,29 @@ public partial class DetailsViewTests
 
     [LibraryImport("user32.dll", EntryPoint = "GetMenuStringW")]
     private static unsafe partial int GetMenuString(nint menu, uint item, char* buffer, int capacity, uint flags);
+
+    [LibraryImport("user32.dll")]
+    private static partial nint GetDC(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    private static partial int ReleaseDC(nint hwnd, nint hdc);
+
+    [LibraryImport("gdi32.dll")]
+    private static partial nint CreateCompatibleDC(nint hdc);
+
+    [LibraryImport("gdi32.dll")]
+    private static partial nint CreateCompatibleBitmap(nint hdc, int width, int height);
+
+    [LibraryImport("gdi32.dll")]
+    private static partial nint SelectObject(nint hdc, nint obj);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DeleteObject(nint obj);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DeleteDC(nint hdc);
 
     [Fact]
     public void Shows_visible_columns_in_settings_order() => Sta.Run(() =>
@@ -411,6 +452,156 @@ public partial class DetailsViewTests
         Assert.Equal(-1, Find(rig.List, "q", -1));
     });
 
+    // The test form is far off-screen, where the window has no visible region, so Invalidate() + Update() draws no rows at all: the
+    // list sends CDDS_PREPAINT and nothing more. WM_PRINTCLIENT and WM_PAINT with an HDC draw every visible row into a bitmap instead,
+    // with the same notifications to the view that an on-screen paint sends, so those are the repaints measured here.
+    [Fact]
+    public void Repaint_serves_every_visible_cell_natively_and_allocates_nothing() => Sta.Run(() =>
+    {
+        using var rig = new Rig(info: new InfoSource(RealisticInfo));
+        rig.AddProcesses(400);
+        rig.View.RefreshRows();
+        var list = rig.List;
+        list.SelectedIndices.Add(3);
+        var retrieved = 0;
+        list.RetrieveVirtualItem += (_, _) => retrieved++;
+        var cells = new CountingCells(list.CellSource!);
+        list.CellSource = cells;
+
+        rig.SetClientSize(new Size(1200, 300));
+        var half = Measure();
+        rig.SetClientSize(new Size(1200, 600)); // twice the rows on the page
+        var full = Measure();
+
+        Assert.True(full.Visible >= half.Visible * 19 / 10, $"{half.Visible}, then {full.Visible} visible cells");
+        // WM_PAINT adds ListView's own WM_PAINT handler, which queues a BeginInvoke(CleanPreviousBackgroundImageFiles) on every paint:
+        // a delegate and a queue entry, the same bytes whatever is drawn.
+        Assert.True(half.Painted <= 256, $"WM_PAINT: {half.Painted} bytes");
+        Assert.True(full.Painted == half.Painted, $"WM_PAINT: {half.Painted} bytes for {half.Visible} visible cells, {full.Painted} for {full.Visible}");
+
+        (int Visible, long Painted) Measure()
+        {
+            var visible = RowsPerPage(list) * VisibleColumns(list);
+            using var canvas = new Canvas(list);
+            canvas.Print(); // warm-up: JIT and the control's first-paint buffers
+            canvas.Paint();
+            Application.DoEvents();
+
+            retrieved = cells.Served = 0;
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            canvas.Print();
+            var printed = GC.GetAllocatedBytesForCurrentThread() - before;
+            var print = $"WM_PRINTCLIENT: served {cells.Served} of {visible} visible cells, {retrieved} RetrieveVirtualItem calls, {printed} bytes";
+            Assert.True(cells.Served >= visible, print);
+            Assert.True(retrieved == 0, print);
+            Assert.True(printed == 0, print);
+
+            retrieved = cells.Served = 0;
+            before = GC.GetAllocatedBytesForCurrentThread();
+            canvas.Paint();
+            var painted = GC.GetAllocatedBytesForCurrentThread() - before;
+            Application.DoEvents(); // runs the callback the paint queued
+            var paint = $"WM_PAINT: served {cells.Served} of {visible} visible cells, {retrieved} RetrieveVirtualItem calls, {painted} bytes";
+            Assert.True(cells.Served >= visible, paint);
+            Assert.True(retrieved == 0, paint);
+            return (visible, painted);
+        }
+    });
+
+    [Fact]
+    public unsafe void Long_command_line_is_cut_natively_within_the_buffer() => Sta.Run(() =>
+    {
+        var longLine = string.Create(40_000, 0, (span, _) =>
+        {
+            for (var i = 0; i < span.Length; i++) span[i] = (char)('a' + i % 26);
+        });
+        using var rig = new Rig(info: new InfoSource(id => new ProcessStaticInfo(null, id.Pid == 2 ? longLine : "short", "u", UacVirtualization.Disabled)));
+        rig.View.RefreshRows(); // alpha.exe, PID 2, is row 0
+        var retrieved = 0;
+        rig.List.RetrieveVirtualItem += (_, _) => retrieved++;
+
+        const int capacity = 1024;
+        var buffer = new char[capacity + 16];
+        Array.Fill(buffer, '￿');
+        int length;
+        fixed (char* p = buffer)
+        {
+            var item = new User32.LvItem { SubItem = ColumnIndex(rig.List, "Command line"), Text = (nint)p, TextMax = capacity };
+            length = (int)User32.SendMessage(rig.List.Handle, LvmGetItemTextW, 0, ref item);
+        }
+
+        Assert.Equal(capacity - 1, length);
+        Assert.Equal(longLine[..length], new string(buffer, 0, length));
+        Assert.Equal('\0', buffer[length]);
+        Assert.All(buffer[capacity..], c => Assert.Equal('￿', c));
+        Assert.Equal(0, retrieved);
+    });
+
+    [Fact]
+    public unsafe void Cell_request_outside_the_rows_or_columns_gets_empty_text() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.View.RefreshRows(); // three rows, eight columns
+
+        foreach (var (row, column) in new[] { (3, 0), (-1, 0), (0, 8) })
+        {
+            var buffer = new char[16];
+            Array.Fill(buffer, 'x');
+            fixed (char* p = buffer)
+            {
+                var info = new NmLvDispInfo
+                {
+                    Hdr = new NmHdr { HwndFrom = rig.List.Handle, Code = LvnGetDispInfoW },
+                    Item = new User32.LvItem { Mask = LvifText | LvifImage, Item = row, SubItem = column, Text = (nint)p, TextMax = buffer.Length, Image = -5 },
+                };
+                User32.SendMessage(rig.View.Handle, WmNotify, 0, (nint)(&info)); // the view reflects it to the list, as for the list's own
+                Assert.Equal(-5, info.Item.Image);
+            }
+
+            Assert.Equal('\0', buffer[0]);
+            Assert.Equal(new string('x', 15), new string(buffer, 1, 15));
+        }
+    });
+
+    // With a cell source the list answers its own custom draw: each row gets the list's colors, as WinForms gives it, but without
+    // WinForms reading Items[i] for them. The rows must look the same: same text, alignment, icons, and selection and hot-item
+    // highlight. Pixels() prints into a bitmap because the off-screen form draws nothing on screen.
+    [Fact]
+    public void Native_cells_draw_the_same_pixels_as_RetrieveVirtualItem_cells() => Sta.Run(() =>
+    {
+        var icon = ShellIconLoader.LoadGenericIcon();
+        Assert.NotEqual(0, icon);
+        try
+        {
+            using var rig = new Rig(info: new InfoSource(RealisticInfo));
+            for (var i = 0; i < 3; i++) rig.Images.Add(icon);
+            rig.AddProcesses(60);
+            foreach (var row in rig.Table.Rows) row.IconSlot = row.Id.Pid % 3;
+            rig.View.RefreshRows();
+            var list = rig.List;
+            SetState(list, 2, LvisSelected | LvisFocused);
+            SetState(list, 5, LvisSelected);
+            SetState(list, 6, LvisSelected);
+            User32.SendMessage(list.Handle, LvmSetHotItem, 8, 0);
+
+            var native = Pixels(list);
+            var cells = list.CellSource;
+            list.CellSource = null; // WinForms' own path: RetrieveVirtualItem and its custom draw
+            var winForms = Pixels(list);
+            list.CellSource = cells;
+
+            Assert.True(native.Distinct().Count() > 10, "the list drew next to nothing");
+            var differ = Enumerable.Range(0, native.Length).Where(i => native[i] != winForms[i]).ToList();
+            if (differ.Count > 0)
+            {
+                var (first, width) = (differ[0], list.ClientSize.Width);
+                Assert.Fail($"{differ.Count} pixels differ, all at y {first / width}..{differ[^1] / width}; the first at ({first % width}, {first / width}) " +
+                    $"is 0x{native[first]:X6} natively and 0x{winForms[first]:X6} through RetrieveVirtualItem");
+            }
+        }
+        finally { User32.DestroyIcon(icon); }
+    });
+
     [Fact]
     public void Select_columns_dialog_lists_11_columns_with_name_locked() => Sta.Run(() =>
     {
@@ -437,17 +628,18 @@ public partial class DetailsViewTests
     private sealed class Rig : IDisposable
     {
         public readonly List<RawProcess> Snapshot = [P(1, "zeta.exe"), P(2, "alpha.exe", privateWorkingSet: 12_641_280), P(3, "mid.exe")];
-        public readonly ProcessTable Table = new(new FakeInfo(), 1);
+        public readonly ProcessTable Table;
         public readonly AppSettings Settings;
         public readonly DetailsView View;
         public int SettingsChanged;
         private readonly NativeImageList _images = new(16);
         private readonly OffscreenForm _form = new() { ClientSize = new Size(1200, 600) };
 
-        public Rig(AppSettings? settings = null)
+        public Rig(AppSettings? settings = null, IProcessInfoSource? info = null)
         {
             CultureInfo.CurrentCulture = new CultureInfo("en-US"); // this STA thread's own culture
             Settings = settings ?? AppSettings.CreateDefault();
+            Table = new ProcessTable(info ?? new FakeInfo(), 1);
             Table.Apply(Snapshot, 10_000_000);
             View = new DetailsView(Table, _images, Settings) { Dock = DockStyle.Fill };
             View.TrackHeaderMenu = (_, _) => throw new InvalidOperationException("the test would have shown the header menu");
@@ -459,7 +651,29 @@ public partial class DetailsViewTests
 
         public ProcessListView List => View.Controls.OfType<ProcessListView>().Single();
 
+        /// <summary>The row icons the view draws from.</summary>
+        public NativeImageList Images => _images;
+
+        /// <summary>Resizes the form, which the view fills.</summary>
+        public void SetClientSize(Size size) => _form.ClientSize = size;
+
         public ProcessRow Row(int pid) => Table.Rows.Single(r => r.Id.Pid == pid);
+
+        /// <summary>
+        /// Adds <paramref name="count"/> processes from PID 1000 up, with the spread of names, sizes, counts, CPU and status a real
+        /// list shows, and applies them.
+        /// </summary>
+        public void AddProcesses(int count)
+        {
+            for (var pid = 1000; pid < 1000 + count; pid++)
+                Snapshot.Add(new RawProcess(pid, 4, 100 + pid, $"process{pid % 97}.exe", 0, 0, pid * 123_457L, pid * 3_456_791L, pid % 60 + 1, pid % 2000 + 50, 1, 8, false));
+            Table.Apply(Snapshot, 20_000_000);
+            foreach (var row in Table.Rows)
+            {
+                row.CpuPercent = row.Id.Pid % 101 / 3.0;
+                row.Status = (ProcessStatus)(row.Id.Pid % 3);
+            }
+        }
 
         public void Dispose()
         {
@@ -469,6 +683,132 @@ public partial class DetailsViewTests
 
         private static RawProcess P(int pid, string name, long privateWorkingSet = 0) =>
             new(pid, 0, 100 + pid, name, 0, 0, privateWorkingSet, 0, 1, 1, 1, 8, false);
+    }
+
+    /// <summary>Static info from a function of the identity.</summary>
+    private sealed class InfoSource(Func<ProcessIdentity, ProcessStaticInfo> query) : IProcessInfoSource
+    {
+        public int SidCacheCount => 0;
+
+        public ProcessStaticInfo Query(ProcessIdentity id) => query(id);
+    }
+
+    /// <summary>Info shaped like real processes: long quoted command lines, machine and system accounts, every UAC state.</summary>
+    private static ProcessStaticInfo RealisticInfo(ProcessIdentity id)
+    {
+        var pid = id.Pid;
+        var image = $@"C:\Program Files\Vendor {pid % 7}\app{pid}.exe";
+        return new ProcessStaticInfo(
+            image,
+            $"\"{image}\" --type=renderer --lang=en-US --field-trial-handle={pid * 7919},i,{pid},{pid * 31} --mojo-platform-channel-handle={pid % 4096} /prefetch:{pid % 9}",
+            pid % 3 == 0 ? @"NT AUTHORITY\SYSTEM" : @"DESKTOP-7950X\owner",
+            (UacVirtualization)(pid % 4));
+    }
+
+    /// <summary>Counts the cells the list asks its cell source for, and passes every call on.</summary>
+    private sealed class CountingCells(ICellSource inner) : ICellSource
+    {
+        public int Served;
+
+        public bool TryWriteCell(int item, int subItem, Span<char> destination, out int written)
+        {
+            Served++;
+            return inner.TryWriteCell(item, subItem, destination, out written);
+        }
+
+        public int ImageIndex(int item) => inner.ImageIndex(item);
+    }
+
+    /// <summary>A bitmap the list's size, with its HDC held, for painting the list into while measuring.</summary>
+    private sealed class Canvas : IDisposable
+    {
+        private readonly nint _list;
+        private readonly Bitmap _bitmap;
+        private readonly Graphics _graphics;
+        private readonly nint _hdc;
+
+        public Canvas(ProcessListView list)
+        {
+            _list = list.Handle;
+            _bitmap = new Bitmap(list.ClientSize.Width, list.ClientSize.Height);
+            _graphics = Graphics.FromImage(_bitmap);
+            _hdc = _graphics.GetHdc();
+        }
+
+        /// <summary><c>WM_PRINTCLIENT</c>: the list view draws every visible row into the bitmap.</summary>
+        public void Print() => User32.SendMessage(_list, WmPrintClient, _hdc, PrfClient);
+
+        /// <summary><c>WM_PAINT</c> with an HDC: the whole WinForms paint route, with the rows drawn into the bitmap.</summary>
+        public void Paint() => User32.SendMessage(_list, WmPaint, _hdc, 0);
+
+        public void Dispose()
+        {
+            _graphics.ReleaseHdc(_hdc);
+            _graphics.Dispose();
+            _bitmap.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// The list's client area, one RGB value per pixel, row by row, drawn by <c>WM_PRINTCLIENT</c> into a bitmap like the screen's
+    /// that is first filled with the list's background, as a real paint erases it. A GDI+ ARGB bitmap would not do: nothing erases
+    /// it for <c>WM_PRINTCLIENT</c>, and ClearType text drawn over its empty alpha comes out heavier than on screen.
+    /// </summary>
+    private static int[] Pixels(ProcessListView list)
+    {
+        var (width, height) = (list.ClientSize.Width, list.ClientSize.Height);
+        var screen = GetDC(0);
+        var dc = CreateCompatibleDC(screen);
+        var bitmap = CreateCompatibleBitmap(screen, width, height);
+        ReleaseDC(0, screen);
+        try
+        {
+            var old = SelectObject(dc, bitmap);
+            using (var graphics = Graphics.FromHdc(dc)) graphics.Clear(list.BackColor);
+            User32.SendMessage(list.Handle, WmPrintClient, dc, PrfClient);
+            SelectObject(dc, old);
+
+            using var image = Image.FromHbitmap(bitmap);
+            var rect = new Rectangle(0, 0, width, height);
+            var data = image.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            try
+            {
+                var pixels = new int[width * height];
+                for (var y = 0; y < height; y++) Marshal.Copy(data.Scan0 + y * data.Stride, pixels, y * width, width);
+                for (var i = 0; i < pixels.Length; i++) pixels[i] &= 0xFFFFFF;
+                return pixels;
+            }
+            finally { image.UnlockBits(data); }
+        }
+        finally
+        {
+            DeleteDC(dc);
+            DeleteObject(bitmap);
+        }
+    }
+
+    private static int RowsPerPage(ProcessListView list) =>
+        Math.Min((int)User32.SendMessage(list.Handle, LvmGetCountPerPage, 0, 0), list.VirtualListSize);
+
+    /// <summary>The columns at least partly inside the list's client area.</summary>
+    private static int VisibleColumns(ProcessListView list)
+    {
+        var header = Header(list);
+        var width = list.ClientSize.Width;
+        var visible = 0;
+        for (var i = 0; i < list.Columns.Count; i++)
+        {
+            var rect = new User32.NativeRect();
+            Assert.NotEqual(0, User32.SendMessage(header, HdmGetItemRect, i, ref rect));
+            if (rect.Right > 0 && rect.Left < width) visible++;
+        }
+        return visible;
+    }
+
+    private static void SetState(ProcessListView list, int row, uint state)
+    {
+        var item = new User32.LvItem { State = state, StateMask = state };
+        User32.SendMessage(list.Handle, LvmSetItemState, row, ref item);
     }
 
     private static int[] Pids(DetailsView view) => [.. view.DisplayedRows.Select(r => r.Id.Pid)];

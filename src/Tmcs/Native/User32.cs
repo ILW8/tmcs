@@ -31,6 +31,45 @@ internal static partial class User32
     /// <summary><c>LVM_SETSELECTIONMARK</c>: lParam is the item that anchors Shift-selection.</summary>
     public const uint LvmSetSelectionMark = 0x1043;
 
+    /// <summary>
+    /// WinForms' <c>WM_REFLECT</c> (0x2000) + <c>WM_NOTIFY</c>: a notification a control sent its parent, which the parent sends back
+    /// to the control. lParam starts with an <see cref="NmHdr"/>.
+    /// </summary>
+    public const int WmReflectNotify = 0x204E;
+
+    /// <summary><c>LVN_GETDISPINFOW</c>: an owner-data list view asks for an item's text, image or indent. lParam is an <see cref="NmLvDispInfo"/>.</summary>
+    public const int LvnGetDispInfoW = -177;
+
+    /// <summary><c>LVN_ODCACHEHINT</c>: an owner-data list view names the rows it is about to draw. lParam is an <c>NMLVCACHEHINT</c>.</summary>
+    public const int LvnOdCacheHint = -113;
+
+    /// <summary>
+    /// <c>NM_CUSTOMDRAW</c>: lParam is an <see cref="NmLvCustomDraw"/> from a list view; the result is a set of <c>CDRF_*</c> flags.
+    /// Named for the code, as <see cref="NmCustomDraw"/> is the struct.
+    /// </summary>
+    public const int NmCustomDrawCode = -12;
+
+    /// <summary><c>CDDS_PREPAINT</c>: the paint cycle starts.</summary>
+    public const uint CddsPrePaint = 0x1;
+
+    /// <summary><c>CDDS_ITEMPREPAINT</c>: one item is about to be drawn.</summary>
+    public const uint CddsItemPrePaint = 0x10001;
+
+    /// <summary><c>CDRF_NEWFONT</c>: the control draws the item with the colors, and the font in the DC, that the answer leaves.</summary>
+    public const nint CdrfNewFont = 0x2;
+
+    /// <summary><c>CDRF_NOTIFYITEMDRAW</c>: answered at <c>CDDS_PREPAINT</c>, the control sends <c>CDDS_ITEMPREPAINT</c> for each item.</summary>
+    public const nint CdrfNotifyItemDraw = 0x20;
+
+    /// <summary><c>LVIF_TEXT</c>: <see cref="LvItem.Text"/> is valid, or asked for.</summary>
+    public const uint LvifText = 0x1;
+
+    /// <summary><c>LVIF_IMAGE</c>: <see cref="LvItem.Image"/> is valid, or asked for.</summary>
+    public const uint LvifImage = 0x2;
+
+    /// <summary><c>LVIF_INDENT</c>: <see cref="LvItem.Indent"/> is valid, or asked for.</summary>
+    public const uint LvifIndent = 0x10;
+
     /// <summary><c>LVNI_FOCUSED</c>.</summary>
     public const nint LvniFocused = 0x1;
 
@@ -151,7 +190,11 @@ internal static partial class User32
         public uint State;
     }
 
-    /// <summary><c>LVITEMW</c>. <see cref="Mask"/> says which fields a get fills or a set applies.</summary>
+    /// <summary>
+    /// <c>LVITEMW</c>. <see cref="Mask"/> says which fields a get fills or a set applies. 88 bytes on x64: the pointer-sized fields
+    /// are 8-aligned, so 4 bytes of padding follow <see cref="StateMask"/> (<see cref="Text"/> is at 24) and <see cref="Columns"/>
+    /// (<see cref="ColumnIndexes"/> is at 64), and 4 more end the struct after <see cref="Group"/>.
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct LvItem
     {
@@ -170,6 +213,63 @@ internal static partial class User32
         public nint ColumnIndexes;
         public nint ColumnFormats;
         public int Group;
+    }
+
+    /// <summary>
+    /// <c>NMHDR</c>, the head of every <c>WM_NOTIFY</c>. 24 bytes on x64: two 8-byte fields, then <see cref="Code"/> at 16 and 4 bytes
+    /// of padding. <see cref="Code"/> is a <c>UINT</c> in C; it is signed here because the notification codes are negative.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NmHdr
+    {
+        public nint HwndFrom;
+        public nuint IdFrom;
+        public int Code;
+    }
+
+    /// <summary><c>NMLVDISPINFOW</c>: <see cref="Item"/> starts at 24 on x64, right after the header, and the whole is 112 bytes.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NmLvDispInfo
+    {
+        public NmHdr Hdr;
+        public LvItem Item;
+    }
+
+    /// <summary>
+    /// <c>NMCUSTOMDRAW</c>. 80 bytes on x64: 4 bytes of padding follow <see cref="DrawStage"/> (<see cref="Hdc"/> is at 32) and
+    /// <see cref="ItemState"/> (<see cref="ItemParam"/> is at 72).
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NmCustomDraw
+    {
+        public NmHdr Hdr;
+        public uint DrawStage;
+        public nint Hdc;
+        public NativeRect Rect;
+        public nuint ItemSpec;
+        public uint ItemState;
+        public nint ItemParam;
+    }
+
+    /// <summary>
+    /// <c>NMLVCUSTOMDRAW</c>, 136 bytes on x64. The colors are <c>COLORREF</c>s, 0x00BBGGRR: <see cref="ClrText"/> is at 80 and
+    /// <see cref="ClrTextBk"/> at 84.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NmLvCustomDraw
+    {
+        public NmCustomDraw Nmcd;
+        public int ClrText;
+        public int ClrTextBk;
+        public int SubItem;
+        public uint ItemType;
+        public int ClrFace;
+        public int IconEffect;
+        public int IconPhase;
+        public int PartId;
+        public int StateId;
+        public NativeRect TextRect;
+        public uint Align;
     }
 
     /// <summary><c>HDHITTESTINFO</c>. <see cref="Point"/> is in header client coordinates.</summary>

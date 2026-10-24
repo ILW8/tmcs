@@ -11,7 +11,7 @@ namespace Tmcs.Details;
 /// and a selection that stays on the same processes across refreshes. Column changes are written to the <see cref="AppSettings"/>
 /// passed in, and <see cref="SettingsChanged"/> tells the owner to save them.
 /// </summary>
-internal sealed class DetailsView : UserControl
+internal sealed class DetailsView : UserControl, ICellSource
 {
     private const int HideColumnCommand = 1;
     private const int SelectColumnsCommand = 2;
@@ -41,7 +41,7 @@ internal sealed class DetailsView : UserControl
     {
         _table = table;
         _settings = settings;
-        _list = new ProcessListView { Dock = DockStyle.Fill, SharedImageList = images.Handle };
+        _list = new ProcessListView { Dock = DockStyle.Fill, SharedImageList = images.Handle, CellSource = this };
         _selection = new SelectionKeeper(_list);
         _list.RetrieveVirtualItem += OnRetrieveVirtualItem;
         _list.SearchForVirtualItem += OnSearchForVirtualItem;
@@ -197,6 +197,11 @@ internal sealed class DetailsView : UserControl
 
     private int ToUnits(int pixels) => (int)Math.Round(pixels * 96.0 / DeviceDpi, MidpointRounding.AwayFromZero);
 
+    /// <summary>
+    /// The list draws its cells through <see cref="ICellSource"/>. This builds the whole row, from the same formatters, for the rare
+    /// WinForms paths that still read an item: <c>Items[i]</c>, <see cref="ListView.FocusedItem"/>, <see cref="ListView.TopItem"/>,
+    /// accessibility.
+    /// </summary>
     private void OnRetrieveVirtualItem(object? sender, RetrieveVirtualItemEventArgs e)
     {
         var row = _rows[e.ItemIndex];
@@ -204,6 +209,16 @@ internal sealed class DetailsView : UserControl
         for (var c = 0; c < cells.Length; c++) cells[c] = _columns[c].Text(row);
         e.Item = new ListViewItem(cells, row.IconSlot);
     }
+
+    bool ICellSource.TryWriteCell(int item, int subItem, Span<char> destination, out int written)
+    {
+        if ((uint)item < (uint)_rows.Count && (uint)subItem < (uint)_columns.Count)
+            return _columns[subItem].Format(_rows[item], destination, out written);
+        written = 0;
+        return true;
+    }
+
+    int ICellSource.ImageIndex(int item) => (uint)item < (uint)_rows.Count ? _rows[item].IconSlot : -1;
 
     private void OnSearchForVirtualItem(object? sender, SearchForVirtualItemEventArgs e)
     {

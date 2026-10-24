@@ -28,6 +28,9 @@ internal sealed class ProcessListView : ListView
     /// <summary>True while <see cref="SetSortArrow"/> writes a header item, whose notification is not a column resize.</summary>
     private bool _writingSortArrow;
 
+    /// <summary>The list's colors as <c>COLORREF</c>s, read once per paint at <c>CDDS_PREPAINT</c> and given to every row.</summary>
+    private int _rowTextColor, _rowBackColor;
+
     public ProcessListView()
     {
         View = View.Details;
@@ -44,6 +47,15 @@ internal sealed class ProcessListView : ListView
     /// -1 from the keyboard) and the screen point to show the menu at.
     /// </summary>
     public event Action<int, Point>? HeaderContextMenu;
+
+    /// <summary>
+    /// When set, the list answers the native control's requests for cell text and icons itself, from this source, and its custom
+    /// draw and cache hints too: painting then never raises <see cref="ListView.RetrieveVirtualItem"/>, which builds a whole
+    /// <see cref="ListViewItem"/> per cell, nor <see cref="ListView.CacheVirtualItems"/>. The WinForms paths that read whole items
+    /// still raise <see cref="ListView.RetrieveVirtualItem"/>. When null, WinForms handles all of them as usual.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] // runtime wiring, never designer state
+    public ICellSource? CellSource { get; set; }
 
     /// <summary>
     /// The <c>HIMAGELIST</c> that rows' <see cref="ListViewItem.ImageIndex"/> refers to, attached as the small image list.
@@ -123,10 +135,82 @@ internal sealed class ProcessListView : ListView
             return; // base would also open the row ContextMenuStrip
         }
 
+        // The list's own notifications, which its parent reflects back here.
+        if (m.Msg == User32.WmReflectNotify && m.LParam != 0 && CellSource is { } cells && AnswerNotify(ref m, cells)) return;
+
         // WinForms sends this from its VirtualListSize setter, and with flags 0. Every count change goes through here.
         if (m.Msg == LvmSetItemCount) m.LParam |= LvsicfNoScroll;
 
         base.WndProc(ref m);
+    }
+
+    /// <summary>
+    /// Answers the notifications that drawing rows sends, so that WinForms, which would raise <see cref="ListView.RetrieveVirtualItem"/>
+    /// or <see cref="ListView.CacheVirtualItems"/> for them, never sees them. Returns false for any other, which WinForms handles.
+    /// </summary>
+    private unsafe bool AnswerNotify(ref Message m, ICellSource cells)
+    {
+        var header = (User32.NmHdr*)m.LParam;
+        switch (header->Code)
+        {
+            case User32.LvnGetDispInfoW:
+                AnswerDispInfo(ref ((User32.NmLvDispInfo*)header)->Item, cells);
+                return true;
+            case User32.LvnOdCacheHint:
+                // The cells come straight from the source, so there is nothing to cache, and WinForms would build event args for it.
+                return true;
+            case User32.NmCustomDrawCode:
+                return AnswerCustomDraw(ref m, ref *(User32.NmLvCustomDraw*)header);
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Draws rows as WinForms' own custom draw does, without it reading <c>Items[i]</c> for each row, which raises
+    /// <see cref="ListView.RetrieveVirtualItem"/>: the rows have no colors or font of their own, so each gets the list's colors, and
+    /// the font the control already selected into the DC. The stages WinForms does not ask for, it gets to answer.
+    /// </summary>
+    private bool AnswerCustomDraw(ref Message m, ref User32.NmLvCustomDraw draw)
+    {
+        switch (draw.Nmcd.DrawStage)
+        {
+            case User32.CddsPrePaint:
+                _rowTextColor = ColorTranslator.ToWin32(ForeColor);
+                _rowBackColor = ColorTranslator.ToWin32(BackColor);
+                m.Result = User32.CdrfNotifyItemDraw | User32.CdrfNewFont;
+                return true;
+            case User32.CddsItemPrePaint:
+                draw.ClrText = _rowTextColor;
+                draw.ClrTextBk = _rowBackColor;
+                m.Result = User32.CdrfNewFont;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Fills in what <c>LVN_GETDISPINFOW</c> asks for: the text of one cell, the row's icon, and no indent. The other mask bits are left
+    /// as the control set them, as WinForms leaves them.
+    /// </summary>
+    private static unsafe void AnswerDispInfo(ref User32.LvItem item, ICellSource cells)
+    {
+        if ((item.Mask & User32.LvifText) != 0 && item.Text != 0 && item.TextMax > 0)
+        {
+            // Straight into the control's buffer. The text gets at most TextMax - 1 characters, so the NUL always fits.
+            var buffer = new Span<char>((void*)item.Text, item.TextMax);
+            cells.TryWriteCell(item.Item, item.SubItem, buffer[..^1], out var written);
+            buffer[Math.Clamp(written, 0, buffer.Length - 1)] = '\0';
+        }
+
+        if ((item.Mask & User32.LvifImage) != 0 && item.SubItem == 0)
+        {
+            var image = cells.ImageIndex(item.Item);
+            if (image >= 0) item.Image = image; // -1 leaves the field alone, as WinForms does for an item without an image
+        }
+
+        if ((item.Mask & User32.LvifIndent) != 0) item.Indent = 0;
     }
 
     private nint HeaderHandle => User32.SendMessage(Handle, User32.LvmGetHeader, 0, 0);

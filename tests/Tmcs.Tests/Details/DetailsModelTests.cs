@@ -122,6 +122,133 @@ public class DetailsModelTests : IDisposable
     [Fact]
     public void Count_uses_group_separators() => Assert.Equal("1,234,567", ValueFormat.Count(1_234_567));
 
+    /// <summary>Cultures with comma, period, apostrophe, space and no-break-space group separators, Indian grouping, and the invariant culture.</summary>
+    public static TheoryData<string> Cultures => ["en-US", "de-DE", "de-CH", "fr-FR", "ru-RU", "en-IN", "sv-SE", ""];
+
+    [Fact]
+    public void Span_formats_use_the_cultures_group_separator()
+    {
+        CultureInfo.CurrentCulture = new("de-DE");
+        Assert.Equal("12.345 K", SpanText(ValueFormat.TryFormatKilobytes, 12_641_280L));
+        Assert.Equal("1.234.567", SpanText(ValueFormat.TryFormatCount, 1_234_567));
+        Assert.Equal("07", SpanText(ValueFormat.TryFormatCpu, 7.4));
+        Assert.Equal("12345", SpanText(ValueFormat.TryFormatPid, 12345));
+        Assert.Equal("12.345 K", ValueFormat.Kilobytes(12_641_280));
+        Assert.Equal("1.234.567", ValueFormat.Count(1_234_567));
+
+        var info = new ProcessStaticInfo(@"C:\x\app.exe", "app.exe --go", @"PC\me", UacVirtualization.Enabled);
+        var row = new ProcessRow(new ProcessIdentity(12345, 1), "app.exe", 4, info)
+        {
+            Status = ProcessStatus.Suspended, CpuPercent = 7.4, PrivateWorkingSet = 12_641_280, CommitSize = 2048, Threads = 1234, Handles = 5,
+        };
+        string[] expected = ["app.exe", "12345", "Suspended", @"PC\me", "07", "12.345 K", "app.exe --go", "Enabled", "1.234", "5", "2 K"];
+        Assert.Equal(expected, DetailsColumns.All.Select(c => c.Text(row)));
+        Assert.Equal(expected, DetailsColumns.All.Select(c => CellText(c, row)));
+    }
+
+    // The right-hand sides are the expressions the columns used before the span formatters, so the output stays byte-identical.
+    [Theory]
+    [MemberData(nameof(Cultures))]
+    public void Span_formats_match_the_former_string_formats(string culture)
+    {
+        CultureInfo.CurrentCulture = new(culture);
+        foreach (var bytes in new[] { 0, 1023, 1024, 12_641_280, 1L << 40, long.MaxValue, -4096 })
+        {
+            Assert.Equal((bytes / 1024).ToString("N0") + " K", SpanText(ValueFormat.TryFormatKilobytes, bytes));
+            Assert.Equal((bytes / 1024).ToString("N0") + " K", ValueFormat.Kilobytes(bytes));
+        }
+
+        foreach (var pct in new[] { 0, 0.4, 0.5, 2.5, 9.6, 99.5, 100, -0.5 })
+        {
+            Assert.Equal(((int)Math.Round(pct, MidpointRounding.AwayFromZero)).ToString("00"), SpanText(ValueFormat.TryFormatCpu, pct));
+            Assert.Equal(((int)Math.Round(pct, MidpointRounding.AwayFromZero)).ToString("00"), ValueFormat.Cpu(pct));
+        }
+
+        foreach (var n in new[] { 0, 5, 999, 1000, 1_234_567, int.MaxValue, int.MinValue })
+        {
+            Assert.Equal(n.ToString("N0"), SpanText(ValueFormat.TryFormatCount, n));
+            Assert.Equal(n.ToString("N0"), ValueFormat.Count(n));
+            Assert.Equal(n.ToString(), SpanText(ValueFormat.TryFormatPid, n));
+        }
+
+        foreach (var s in Enum.GetValues<ProcessStatus>()) Assert.Equal(ValueFormat.Status(s), SpanText(ValueFormat.TryFormatStatus, s));
+        foreach (var u in Enum.GetValues<UacVirtualization>()) Assert.Equal(ValueFormat.Uac(u), SpanText(ValueFormat.TryFormatUac, u));
+    }
+
+    [Theory]
+    [MemberData(nameof(Cultures))]
+    public void Every_column_formats_the_same_text_into_a_span_as_its_string(string culture)
+    {
+        CultureInfo.CurrentCulture = new(culture);
+        foreach (var row in SampleRows())
+        foreach (var column in DetailsColumns.All)
+            Assert.Equal(column.Text(row), CellText(column, row));
+
+        var sample = SampleRows()[0];
+        Assert.Equal((sample.PrivateWorkingSet / 1024).ToString("N0") + " K", DetailsColumns.Get(DetailsColumn.ActivePrivateWorkingSet).Text(sample));
+        Assert.Equal(sample.Threads.ToString("N0"), DetailsColumns.Get(DetailsColumn.Threads).Text(sample));
+        Assert.Equal(sample.Id.Pid.ToString(), DetailsColumns.Get(DetailsColumn.Pid).Text(sample));
+    }
+
+    [Fact]
+    public void Span_formats_cut_the_text_to_the_destination_and_never_write_past_it()
+    {
+        foreach (var row in SampleRows())
+        foreach (var column in DetailsColumns.All)
+        {
+            var full = column.Text(row);
+            for (var length = 0; length <= Math.Min(full.Length + 2, 300); length++)
+            {
+                var buffer = new char[length + 8];
+                Array.Fill(buffer, '\uFFFF');
+                var whole = column.Format(row, buffer.AsSpan(0, length), out var written);
+
+                var expected = Math.Min(length, full.Length);
+                Assert.True(written == expected, $"{column.Id}, {length} chars: wrote {written}, expected {expected}");
+                Assert.Equal(full[..expected], new string(buffer, 0, written));
+                Assert.Equal(length >= full.Length, whole);
+                Assert.All(buffer[length..], c => Assert.Equal('\uFFFF', c));
+            }
+        }
+    }
+
+    [Fact]
+    public void Text_holds_the_whole_of_a_very_long_command_line()
+    {
+        var longLine = new string('x', 39_999) + "!";
+        var row = new ProcessRow(new ProcessIdentity(1, 1), "a", 0, new ProcessStaticInfo(null, longLine, null, UacVirtualization.Unknown));
+        Assert.Equal(longLine, DetailsColumns.Get(DetailsColumn.CommandLine).Text(row));
+    }
+
+    delegate bool SpanFormat<in T>(T value, Span<char> destination, out int written);
+
+    static string SpanText<T>(SpanFormat<T> format, T value)
+    {
+        var buffer = new char[256];
+        Assert.True(format(value, buffer, out var written));
+        return new string(buffer, 0, written);
+    }
+
+    static string CellText(ColumnDef column, ProcessRow row)
+    {
+        var buffer = new char[256];
+        Assert.True(column.Format(row, buffer, out var written));
+        return new string(buffer, 0, written);
+    }
+
+    static ProcessRow[] SampleRows() =>
+    [
+        new(new ProcessIdentity(12345, 1), "app.exe", 4, new ProcessStaticInfo(@"C:\x\app.exe", "\"C:\\x\\app.exe\" --go", @"PC\me", UacVirtualization.Enabled))
+        {
+            Status = ProcessStatus.Suspended, CpuPercent = 7.4, PrivateWorkingSet = 12_641_280, CommitSize = 9_876_543_210, Threads = 1234, Handles = 56_789,
+        },
+        new(new ProcessIdentity(4, 1), "System", 0, ProcessStaticInfo.Blank) { Status = ProcessStatus.Running, CpuPercent = 100, Threads = 0 },
+        new(new ProcessIdentity(int.MaxValue, 1), "", 0, new ProcessStaticInfo(null, null, "NT AUTHORITY\\SYSTEM", UacVirtualization.NotAllowed))
+        {
+            Status = ProcessStatus.NotResponding, CpuPercent = 99.5, PrivateWorkingSet = long.MaxValue, CommitSize = 1023, Threads = int.MaxValue, Handles = 1,
+        },
+    ];
+
     [Fact]
     public void Status_and_uac_strings()
     {
