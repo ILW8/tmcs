@@ -31,6 +31,26 @@ internal static unsafe partial class Pdh
         public double Value;
     }
 
+    /// <summary>
+    /// <c>PDH_RAW_COUNTER_ITEM_W</c>: 48 bytes on x64. The <c>FILETIME</c> is two 4-byte halves at 12, so a
+    /// <see cref="long"/> there would be padded to 16 and shift every later field.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RawCounterItem
+    {
+        /// <summary>The instance name, in the same buffer after the items.</summary>
+        public char* Name;
+        public uint CStatus;
+        public uint TimeStampLow;
+        public uint TimeStampHigh;
+        public long FirstValue;
+        public long SecondValue;
+        public uint MultiCount;
+
+        /// <summary>When the value was read, in 100 ns units.</summary>
+        public readonly long TimeStamp => (long)TimeStampHigh << 32 | TimeStampLow;
+    }
+
     /// <summary><c>PDH_FMT_COUNTERVALUE</c> with a double value.</summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct CounterValue
@@ -54,6 +74,11 @@ internal static unsafe partial class Pdh
     /// <param name="buffer">An array of <see cref="CounterValueItem"/> followed by the names; may be null with size 0 to ask for the size.</param>
     [LibraryImport("pdh.dll")]
     public static partial uint PdhGetFormattedCounterArrayW(nint counter, uint format, ref uint bufferSize, out uint itemCount, void* buffer);
+
+    /// <param name="bufferSize">In: bytes in <paramref name="buffer"/>. Out: bytes needed or used.</param>
+    /// <param name="buffer">An array of <see cref="RawCounterItem"/> followed by the names; may be null with size 0 to ask for the size.</param>
+    [LibraryImport("pdh.dll")]
+    public static partial uint PdhGetRawCounterArrayW(nint counter, ref uint bufferSize, out uint itemCount, void* buffer);
 
     [LibraryImport("pdh.dll")]
     public static partial uint PdhGetFormattedCounterValue(nint counter, uint format, out uint counterType, out CounterValue value);
