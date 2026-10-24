@@ -29,7 +29,7 @@ public class PerfFormatTests : IDisposable
     public void Number_shows_zero_bare_and_drops_decimals_from_100()
     {
         Assert.Equal("0", PerfFormat.Number(0)); Assert.Equal("1.6", PerfFormat.Number(1.6));
-        Assert.Equal("100", PerfFormat.Number(99.96)); Assert.Equal("216", PerfFormat.Number(216.4));
+        Assert.Equal("100", PerfFormat.Number(99.96)); Assert.Equal("100", PerfFormat.Number(99.95)); Assert.Equal("216", PerfFormat.Number(216.4));
     }
 
     [Fact]
@@ -38,6 +38,7 @@ public class PerfFormatTests : IDisposable
         const double G = 1L << 30;
         Assert.Equal("55/120 GB", PerfFormat.Pair(54.7 * G, 119.7 * G, "GB", G));
         Assert.Equal("38.4/63.7 GB", PerfFormat.Pair(38.4 * G, 63.7 * G, "GB", G));
+        Assert.Equal("99/932 GB", PerfFormat.Pair(99 * G, 931.496 * G, "GB", G));
     }
 
     [Fact]
@@ -84,6 +85,7 @@ public class PerfFormatTests : IDisposable
     {
         Assert.Equal("10%", PerfFormat.Percent(9.5)); Assert.Equal("6%", PerfFormat.Percent(6.24));
         Assert.Equal("4.42 GHz", PerfFormat.Ghz(4420)); Assert.Equal("4.50 GHz", PerfFormat.Ghz(4500));
+        Assert.Equal("4.43 GHz", PerfFormat.Ghz(4425));
         Assert.Equal("25:17:28:41", PerfFormat.UpTime(new TimeSpan(25, 17, 28, 41, 900)));
         Assert.Equal("0:00:00:05", PerfFormat.UpTime(TimeSpan.FromSeconds(5)));
         Assert.Equal("0 ms", PerfFormat.Milliseconds(0)); Assert.Equal("38 °C", PerfFormat.Celsius(37.8));

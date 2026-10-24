@@ -11,7 +11,7 @@ internal static class PerfFormat
     static double Round1(double value) => Math.Round(value, 1, MidpointRounding.AwayFromZero);
 
     static string Fixed(double value, bool whole) =>
-        whole ? Math.Round(value, MidpointRounding.AwayFromZero).ToString("0") : Round1(value).ToString("0.0");
+        whole ? Math.Round(Round1(value), MidpointRounding.AwayFromZero).ToString("0") : Round1(value).ToString("0.0");
 
     /// <summary>
     /// The shared precision rule: 0 is bare, one decimal below 100, none from 100. Rounding to a tenth first is how
@@ -78,7 +78,7 @@ internal static class PerfFormat
     public static string Percent(double percent) =>
         Math.Round(percent, MidpointRounding.AwayFromZero).ToString("0") + "%";
 
-    public static string Ghz(double mhz) => (mhz / 1000).ToString("0.00") + " GHz";
+    public static string Ghz(double mhz) => (Math.Round(mhz / 10, MidpointRounding.AwayFromZero) / 100).ToString("0.00") + " GHz";
 
     public static string UpTime(TimeSpan t) =>
         $"{(long)t.TotalDays}:{t.Hours:00}:{t.Minutes:00}:{t.Seconds:00}";
