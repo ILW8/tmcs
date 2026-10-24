@@ -1,3 +1,5 @@
+using Tmcs.Native;
+
 namespace Tmcs.Processes;
 
 internal static class CpuMath
@@ -11,5 +13,15 @@ internal static class CpuMath
         if (deltaWall100ns <= 0 || logicalProcessors <= 0)
             return 0;
         return Math.Clamp(100.0 * deltaCpu100ns / ((double)deltaWall100ns * logicalProcessors), 0, 100);
+    }
+
+    /// <summary>
+    /// The machine's active logical processors, across every processor group: the divisor of <see cref="Percent"/>. Not
+    /// <see cref="Environment.ProcessorCount"/>, which follows this process's affinity, job limits and DOTNET_PROCESSOR_COUNT.
+    /// </summary>
+    public static int MachineLogicalProcessors()
+    {
+        var count = Kernel32.GetActiveProcessorCount(Kernel32.AllProcessorGroups);
+        return count > 0 ? (int)count : Environment.ProcessorCount; // 0 on failure
     }
 }

@@ -90,7 +90,7 @@ internal class MainForm : Form, IScenarioTarget
             services.Icons.DestroyIcon(services.GenericIcon); // the image list keeps its own copy
         }
 
-        _table = new ProcessTable(services.Info, Environment.ProcessorCount);
+        _table = new ProcessTable(services.Info, CpuMath.MachineLogicalProcessors());
         _table.Added += row => row.IconSlot = _icons.Acquire(row.Info.ImagePath);
         _table.Removed += row => _icons.Release(row.Info.ImagePath);
 

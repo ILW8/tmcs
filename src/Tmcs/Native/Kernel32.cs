@@ -9,6 +9,9 @@ internal static unsafe partial class Kernel32
 
     public const int ErrorInsufficientBuffer = 122;
 
+    /// <summary><c>ALL_PROCESSOR_GROUPS</c>: <see cref="GetActiveProcessorCount"/> counts the processors of every group.</summary>
+    public const ushort AllProcessorGroups = 0xFFFF;
+
     /// <returns>The process handle, or 0 on failure. The caller must <see cref="CloseHandle"/> it.</returns>
     [LibraryImport("kernel32.dll", SetLastError = true)]
     public static partial nint OpenProcess(uint desiredAccess, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, int processId);
@@ -30,4 +33,8 @@ internal static unsafe partial class Kernel32
     /// <returns>A pseudo handle that needs no closing.</returns>
     [LibraryImport("kernel32.dll")]
     public static partial nint GetCurrentProcess();
+
+    /// <returns>The number of active logical processors in the group, or 0 on failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial uint GetActiveProcessorCount(ushort groupNumber);
 }
