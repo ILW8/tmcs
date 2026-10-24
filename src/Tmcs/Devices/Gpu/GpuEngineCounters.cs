@@ -35,6 +35,10 @@ internal sealed class GpuEngineCounters
         if (!TryParse(instanceName, out var key)) return;
         _current[key] = new Reading(runningTime, timeStamp);
 
+        // Every node an instance names gets an entry, even before it has a delta: PDH only moves a timestamp when the
+        // counter updates, so reads close together can repeat it, and the map's size must not depend on that.
+        ref var sum = ref CollectionsMarshal.GetValueRefOrAddDefault(_sums, (key.Luid, key.Node), out _);
+
         // An instance seen for the first time only sets its baseline.
         if (!_previous.TryGetValue(key, out var last)) return;
         var elapsed = timeStamp - last.TimeStamp;
@@ -42,7 +46,7 @@ internal sealed class GpuEngineCounters
 
         // A pid reused within a tick, or a driver restart, sends the running time backwards: count it as idle.
         var busy = Math.Max(0, runningTime - last.RunningTime);
-        CollectionsMarshal.GetValueRefOrAddDefault(_sums, (key.Luid, key.Node), out _) += (double)busy / elapsed;
+        sum += (double)busy / elapsed;
     }
 
     public void EndSample()
@@ -53,13 +57,16 @@ internal sealed class GpuEngineCounters
         KeepHeadroom(_current, _previous.Count);
         (_completed, _sums) = (_sums, _completed);
         _sums.Clear();
+        KeepHeadroom(_completed, _completed.Count);
+        KeepHeadroom(_sums, _completed.Count);
     }
 
     /// <summary>
     /// Keeps room for twice the live instances, so the GPU processes that start between two samples don't make a map
-    /// resize, and allocate, in the middle of a read. It grows to three times when short, so it doesn't grow every sample.
+    /// resize, and allocate, in the middle of a read. It grows to three times when short, so it doesn't grow every
+    /// sample. The node maps use it too, for the nodes a new LUID brings.
     /// </summary>
-    static void KeepHeadroom(Dictionary<(uint Pid, long Luid, int Node), Reading> map, int live)
+    static void KeepHeadroom<TKey, TValue>(Dictionary<TKey, TValue> map, int live) where TKey : notnull
     {
         if (map.EnsureCapacity(0) < 2 * live) map.EnsureCapacity(3 * live);
     }

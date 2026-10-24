@@ -125,4 +125,28 @@ public sealed class GpuEngineCountersTests
         _ = c.NodePercent(Luid, 0);
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
+
+    [Fact]
+    public void Node_sums_are_sized_even_when_warm_up_samples_share_a_timestamp()
+    {
+        // PDH only moves an instance's timestamp when the counter updates, so back-to-back reads can repeat it and
+        // yield no deltas. The per-node maps must still have room for the nodes before the first delta arrives.
+        var names = Enumerable.Range(0, 40).Select(n => Name(10, n)).ToArray();
+        var c = new GpuEngineCounters();
+        for (var i = 0; i < 3; i++)
+        {
+            foreach (var n in names) c.Accumulate(n, 1000, Second);
+            c.EndSample();
+            _ = c.NodePercent(Luid, 0);
+        }
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 2; i < 6; i++)
+        {
+            foreach (var n in names) c.Accumulate(n, 1000 * i, i * Second);
+            c.EndSample();
+            _ = c.NodePercent(Luid, 0);
+        }
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
 }
