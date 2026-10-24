@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace Tmcs.Native;
 
@@ -87,4 +88,39 @@ internal static unsafe partial class Kernel32
     /// <returns>The table's size in bytes (what was copied, or what is needed when <paramref name="size"/> is too small), or 0 on failure.</returns>
     [LibraryImport("kernel32.dll", SetLastError = true)]
     public static partial uint GetSystemFirmwareTable(uint provider, uint tableId, byte* buffer, uint size);
+
+    public const uint FileShareRead = 1;
+    public const uint FileShareWrite = 2;
+    public const uint OpenExisting = 3;
+
+    /// <summary>Opens a device or volume. Access 0 asks for no data rights, which is enough for the query IOCTLs and needs no elevation.</summary>
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial SafeFileHandle CreateFileW(string fileName, uint desiredAccess, uint shareMode, nint securityAttributes, uint creationDisposition, uint flagsAndAttributes, nint templateFile);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeviceIoControl(SafeFileHandle device, uint controlCode, void* inBuffer, uint inSize, void* outBuffer, uint outSize, out uint bytesReturned, nint overlapped);
+
+    /// <param name="name">Receives <c>\?\Volume{guid}\</c>, with a terminator.</param>
+    /// <returns>A find handle for <see cref="FindVolumeClose"/>, or -1 on failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial nint FindFirstVolumeW(char* name, uint length);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool FindNextVolumeW(nint find, char* name, uint length);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool FindVolumeClose(nint find);
+
+    /// <param name="volumeName">The volume name with its trailing backslash.</param>
+    /// <param name="names">Receives a multi-string of mount paths (<c>C:\</c>, folder mounts).</param>
+    [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetVolumePathNamesForVolumeNameW(string volumeName, char* names, uint length, out uint needed);
+
+    /// <returns>Chars written excluding the terminator, or 0 on failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial uint GetSystemWindowsDirectoryW(char* buffer, uint size);
 }

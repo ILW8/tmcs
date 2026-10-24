@@ -9,6 +9,9 @@ internal static unsafe partial class NtDll
     /// <summary><c>SystemPerformanceInformation</c>: page counts for available memory, commit and the pools.</summary>
     public const int SystemPerformanceInformation = 2;
 
+    /// <summary><c>SystemPageFileInformation</c>: a chain of entries whose names look like <c>\??\C:\pagefile.sys</c>.</summary>
+    public const int SystemPageFileInformation = 18;
+
     /// <summary><c>SystemMemoryListInformation</c>: page counts of the zero, free, modified and standby lists.</summary>
     public const int SystemMemoryListInformation = 80;
 
