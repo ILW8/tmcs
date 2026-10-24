@@ -9,6 +9,8 @@ dotnet build
 dotnet test
 ```
 
+While a Debug tmcs is running it locks `src\Tmcs\bin\Debug`, so build and test into another folder with `dotnet test --artifacts-path artifacts/verify`. Keep that folder inside the repository: some tests find the repository from their output folder.
+
 Debug builds run as the invoking user (no UAC prompt). Release builds, and so the published exe, request administrator rights, so launching one shows a UAC prompt.
 
 ## Publish
@@ -40,7 +42,7 @@ The soak checks that tmcs does not leak while processes start and exit continuou
 Test mode is switched on by environment variables, not command-line flags (tmcs ignores its arguments):
 
 - `TMCS_DIAG` is the path of the CSV to write, and must end in `.csv`. Setting it turns test mode on.
-- `TMCS_SCENARIO` is optional and is read only in test mode. It is a list of `action:minutes` steps separated by commas, for example `details:10,minimized:30,details:3,paused:5,details:2`. The actions are `details` (restored, Details tab, sampling), `minimized` (minimized, sampling) and `paused` (restored, paused). Minutes may be fractional.
+- `TMCS_SCENARIO` is optional and is used only in test mode. It is a list of `action:minutes` steps separated by commas, for example `details:10,minimized:30,details:3,paused:5,details:2`. The actions are `details` (restored, Details tab, sampling), `minimized` (minimized, sampling) and `paused` (restored, paused). Minutes may be fractional.
 
 Set them for the tmcs process only. tmcs removes both from its own environment when it starts, so the processes it starts do not inherit them.
 
@@ -86,19 +88,27 @@ pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m1-debug.csv
 
 ### Elevated soak (published build)
 
-Run the published exe the same way, with churn running (keep it going for the whole scenario, here 30 minutes, so `-Minutes 32`). A UAC-elevated process does not inherit your environment variables, so the wrapper starts an elevated `pwsh` that sets them itself and then starts tmcs. This shows one UAC prompt:
+Run the published exe the same way, with churn running for the whole scenario (here 30 minutes, so 32 minutes of churn):
 
 ```
-Start-Process pwsh -Verb RunAs -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "`$env:TMCS_DIAG='$PWD\artifacts\soak\m1-elevated.csv'; `$env:TMCS_SCENARIO='details:10,minimized:10,details:3,paused:5,details:2'; & '$PWD\artifacts\publish\tmcs.exe' | Out-Null"
+pwsh -File tools/churn.ps1 -Parallel 8 -Minutes 32
+```
+
+A UAC-elevated process does not inherit your environment variables, so the wrapper starts an elevated `pwsh` that sets them itself and then starts tmcs. This shows one UAC prompt:
+
+```
+Start-Process pwsh -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "`$env:TMCS_DIAG='$PWD\artifacts\soak\m1-elevated.csv'; `$env:TMCS_SCENARIO='details:10,minimized:10,details:3,paused:5,details:2'; & '$PWD\artifacts\publish\tmcs.exe' | Out-Null"
 pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m1-elevated.csv
 ```
 
-Run the report once tmcs has exited.
+`-Wait` holds the prompt until the elevated `pwsh`, and so tmcs, has exited, so the report reads the finished log.
 
 ### Reading the report
 
 `soak-report.ps1` splits the CSV into segments of consecutive rows with the same step and prints one row per check: PASS, FAIL or SKIP. It exits with code 0 when no check fails and 1 otherwise.
 
-For every segment, switching into it must take at most 100 ms, which also catches a stall after restoring from minimized. A `paused` segment must take no samples. After a 2-minute warm-up (`-WarmupMinutes`), private bytes may grow by at most 2 MB, GDI and USER objects may vary by at most 5, and handles by at most 50. A segment too short to have two rows after warm-up reports SKIP for those checks.
+For every scenario segment (rows with the step `none` or `done` are skipped), switching into it must take at most 100 ms, which also catches a stall after restoring from minimized. A `paused` segment must take no samples. After a 2-minute warm-up (`-WarmupMinutes`), private bytes may grow by at most 2 MB, GDI and USER objects may vary by at most 5, and handles by at most 50. A segment too short to have two rows after warm-up reports SKIP for those checks.
+
+With the default 2-minute warm-up, segment 1 of a soak FAILs the private-bytes check: the GC commits its heap over about the first 12 minutes, as [docs/superpowers/results/2026-10-23-m1-soak.md](docs/superpowers/results/2026-10-23-m1-soak.md) records. Judge leaks by the later segments, or score with `-WarmupMinutes 6`.
 
 The design is in [docs/superpowers/specs/2026-10-23-tmcs-design.md](docs/superpowers/specs/2026-10-23-tmcs-design.md).
