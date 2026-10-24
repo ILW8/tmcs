@@ -18,6 +18,8 @@ public sealed class PerformanceModelTests
 
     static string[] Keys(PerformanceModel model) => [.. model.Devices.Select(d => d.Key)];
 
+    static RawProcess Process(int pid, int parent, string name) => new(pid, parent, 0, name, 0, 0, 0, 0, 1, 10, 0, 8, false, 1 << 20);
+
     [Fact]
     public void Devices_are_in_sidebar_order()
     {
@@ -86,6 +88,31 @@ public sealed class PerformanceModelTests
         Assert.Equal(3, kept.History.Count);
         Assert.Equal(1, model.Devices[5].History.Count);
         Assert.Equal(1, changes);
+    }
+
+    [Fact]
+    public void Info_only_rescan_updates_the_info_and_raises_nothing()
+    {
+        var sources = FakeDeviceSources.Create();
+        using var model = new PerformanceModel(sources);
+        model.Sample(Second, Snapshot);
+        model.Sample(2 * Second, Snapshot);
+        var b = model.Devices.Single(d => d.Key == KeyB);
+        var changes = 0;
+        model.DevicesChanged += () => changes++;
+
+        // A DHCP renewal: the same adapters in the same order, B with a new address.
+        sources.FakeNetwork().Adapters = [FakeDeviceSources.Adapter(FakeDeviceSources.A, 1), FakeDeviceSources.Adapter(FakeDeviceSources.B, 2, ipv4: "10.0.0.9")];
+        sources.FakeNetwork().Changed = true;
+        model.Sample(3 * Second, Snapshot);
+
+        Assert.Equal(2, sources.FakeNetwork().Enumerations);
+        Assert.Equal(["cpu", "memory", "disk:0", "disk:4", KeyA, KeyB, "gpu:1d8c7"], Keys(model));
+        var kept = Assert.IsType<NetworkDevice>(model.Devices[5]);
+        Assert.Same(b, kept);
+        Assert.Equal("10.0.0.9", kept.Info.IPv4);
+        Assert.Equal(3, kept.History.Count);
+        Assert.Equal(0, changes);
     }
 
     [Fact]
@@ -161,12 +188,21 @@ public sealed class PerformanceModelTests
     [Fact]
     public void Steady_sampling_does_not_allocate()
     {
+        // A real snapshot is a non-empty List, whose interface enumerator would box where an empty array's is cached. Memory
+        // Compression comes last, so the memory device walks the whole list.
+        List<RawProcess> snapshot =
+        [
+            Process(0, 0, "System Idle Process"),
+            Process(4, 0, "System"),
+            Process(5000, 1000, "app.exe"),
+            Process(3000, 4, "Memory Compression"),
+        ];
         using var model = new PerformanceModel(FakeDeviceSources.Create());
         var time = 0L;
-        for (var i = 0; i < 3; i++) model.Sample(time += Second, Snapshot);
+        for (var i = 0; i < 3; i++) model.Sample(time += Second, snapshot);
 
         var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 100; i++) model.Sample(time += Second, Snapshot);
+        for (var i = 0; i < 100; i++) model.Sample(time += Second, snapshot);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Equal(0, allocated);
