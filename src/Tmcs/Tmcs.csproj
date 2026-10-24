@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>tmcs</AssemblyName>
+    <RootNamespace>Tmcs</RootNamespace>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <ApplicationIcon>tmcs.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Version resource -->
+  <PropertyGroup>
+    <Product>tmcs</Product>
+    <Company>ILW8</Company>
+    <Copyright>© 2026 ILW8</Copyright>
+    <Version>0.1.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <!-- Release: requireAdministrator. Debug: asInvoker, so development never raises a UAC prompt. -->
+  <PropertyGroup>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <ApplicationManifest>app.debug.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tmcs.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,114 @@
+# tmcs
+
+tmcs is a small, original Windows 10 Task Manager replacement written in C# (WinForms, .NET 10). It exists because the stock Task Manager leaks icons and handles when left running for days; tmcs lists processes in a virtual-mode Details view and releases per-process state, including icons, on the same tick a process exits.
+
+## Build and test
+
+```
+dotnet build
+dotnet test
+```
+
+While a Debug tmcs is running it locks `src\Tmcs\bin\Debug`, so build and test into another folder with `dotnet test --artifacts-path artifacts/verify`. Keep that folder inside the repository: some tests find the repository from their output folder.
+
+Debug builds run as the invoking user (no UAC prompt). Release builds, and so the published exe, request administrator rights, so launching one shows a UAC prompt.
+
+## Publish
+
+```
+dotnet publish src/Tmcs -p:PublishProfile=win-x64
+```
+
+The profile is `src/Tmcs/Properties/PublishProfiles/win-x64.pubxml`: Release, win-x64, self-contained, single file. The output is `artifacts/publish/tmcs.exe`, with a `tmcs.pdb` beside it and no other files. The exe needs no installed .NET runtime. `artifacts/` is git-ignored.
+
+Put `tmcs.exe` in a folder only administrators can write to, for example `C:\Program Files\tmcs\`: it runs elevated, and Windows loads some DLLs from the exe's own folder.
+
+### Sign
+
+Sign the exe with your own certificate:
+
+```
+signtool sign /fd SHA256 /a /tr <timestamp-url> /td SHA256 artifacts\publish\tmcs.exe
+```
+
+`/a` picks the best certificate in your store; `<timestamp-url>` is your certificate authority's RFC 3161 timestamp server.
+
+## Soak test
+
+The soak checks that tmcs does not leak while processes start and exit continuously. It has three parts: `tools/churn.ps1` starts and ends short-lived processes, tmcs in test mode logs its own counters to a CSV, and `tools/soak-report.ps1` checks the CSV. Run every command from the repository root in `pwsh`.
+
+### Test mode
+
+Test mode is switched on by environment variables, not command-line flags (tmcs ignores its arguments):
+
+- `TMCS_DIAG` is the path of the CSV to write, and must end in `.csv`. Setting it turns test mode on.
+- `TMCS_SCENARIO` is optional and is used only in test mode. It is a list of `action:minutes` steps separated by commas, for example `details:10,minimized:30,details:3,paused:5,details:2`. The actions are `details` (restored, Details tab, sampling), `minimized` (minimized, sampling) and `paused` (restored, paused). Minutes may be fractional.
+
+Set them for the tmcs process only. tmcs removes both from its own environment when it starts, so the processes it starts do not inherit them.
+
+In test mode tmcs:
+
+- skips the single-instance check, so it can run beside a normal instance;
+- shows its window without activating it and keeps it at the bottom of the z-order, so it never takes focus or rises above your windows;
+- starts at Normal speed, not on top and not maximized, whatever the settings file says;
+- reads the settings file but never saves it;
+- writes one CSV row every 10 seconds (private bytes, handles, GDI and USER objects, icon and row counts, CPU time, samples taken, and how long the last scenario step took to apply), replacing a CSV that tmcs wrote before at that path (it refuses any other file already there, see below);
+- plays the scenario, if there is one, and exits with code 0 when it ends. Without a scenario it logs until you close the window.
+
+Nobody watches a test run, so test mode never shows an error dialog. It writes the error to stderr and, except for code 3, to `<TMCS_DIAG>.error.txt` when that file can be written. The exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | The scenario ended, or you closed the window. |
+| 2 | `TMCS_SCENARIO` does not parse. Reported before any window appears. |
+| 3 | `TMCS_DIAG` is refused, before any window appears: it does not end in `.csv`, or it names an existing file whose first line is not the diagnostics header. tmcs writes nothing at all, not even the error file. |
+| 4 | The CSV cannot be read, created or written, for example because another program has it locked or the folder is read-only. |
+| 5 | An unhandled exception, for example in a timer tick, ended the run. |
+
+### Non-elevated soak (Debug build)
+
+Start the churn in one terminal. It runs for the given minutes, then prints how many processes it started:
+
+```
+dotnet build -c Debug
+pwsh -File tools/churn.ps1 -Parallel 8 -Minutes 52
+```
+
+In another, run tmcs with the variables set for that process only. Piping to `Out-Null` makes the command wait until tmcs exits (this scenario takes 50 minutes):
+
+```
+pwsh -NoProfile -Command '$env:TMCS_DIAG = "$PWD/artifacts/soak/m1-debug.csv"; $env:TMCS_SCENARIO = "details:10,minimized:30,details:3,paused:5,details:2"; & ./src/Tmcs/bin/Debug/net10.0-windows/win-x64/tmcs.exe | Out-Null'
+```
+
+Then check the log:
+
+```
+pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m1-debug.csv
+```
+
+### Elevated soak (published build)
+
+Run the published exe the same way, with churn running for the whole scenario (here 30 minutes, so 32 minutes of churn):
+
+```
+pwsh -File tools/churn.ps1 -Parallel 8 -Minutes 32
+```
+
+A UAC-elevated process does not inherit your environment variables, so the wrapper starts an elevated `pwsh` that sets them itself and then starts tmcs. This shows one UAC prompt:
+
+```
+Start-Process pwsh -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "`$env:TMCS_DIAG='$PWD\artifacts\soak\m1-elevated.csv'; `$env:TMCS_SCENARIO='details:10,minimized:10,details:3,paused:5,details:2'; & '$PWD\artifacts\publish\tmcs.exe' | Out-Null"
+pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m1-elevated.csv
+```
+
+`-Wait` holds the prompt until the elevated `pwsh`, and so tmcs, has exited, so the report reads the finished log.
+
+### Reading the report
+
+`soak-report.ps1` splits the CSV into segments of consecutive rows with the same step and prints one row per check: PASS, FAIL or SKIP. It exits with code 0 when no check fails and 1 otherwise.
+
+For every scenario segment (rows with the step `none` or `done` are skipped), switching into it must take at most 100 ms, which also catches a stall after restoring from minimized. A `paused` segment must take no samples. After a 2-minute warm-up (`-WarmupMinutes`), private bytes may grow by at most 2 MB, GDI and USER objects may vary by at most 5, and handles by at most 50. A segment too short to have two rows after warm-up reports SKIP for those checks.
+
+With the default 2-minute warm-up, segment 1 of a soak FAILs the private-bytes check: the GC commits its heap over about the first 12 minutes, as [docs/superpowers/results/2026-10-23-m1-soak.md](docs/superpowers/results/2026-10-23-m1-soak.md) records. Judge leaks by the later segments, or score with `-WarmupMinutes 6`.
+
+The design is in [docs/superpowers/specs/2026-10-23-tmcs-design.md](docs/superpowers/specs/2026-10-23-tmcs-design.md).

@@ -1,0 +1,27 @@
+using Tmcs.Native;
+
+namespace Tmcs.Processes;
+
+internal static class CpuMath
+{
+    /// <summary>CPU use as a percentage of the whole machine (all logical processors), clamped to [0, 100].</summary>
+    /// <param name="deltaCpu100Ns">Kernel + user time consumed since the previous sample.</param>
+    /// <param name="deltaWall100Ns">Wall-clock time since the previous sample.</param>
+    /// <param name="logicalProcessors">Number of logical processors the machine has.</param>
+    public static double Percent(long deltaCpu100Ns, long deltaWall100Ns, int logicalProcessors)
+    {
+        if (deltaWall100Ns <= 0 || logicalProcessors <= 0)
+            return 0;
+        return Math.Clamp(100.0 * deltaCpu100Ns / ((double)deltaWall100Ns * logicalProcessors), 0, 100);
+    }
+
+    /// <summary>
+    /// The machine's active logical processors, across every processor group: the divisor of <see cref="Percent"/>. Not
+    /// <see cref="Environment.ProcessorCount"/>, which follows this process's affinity, job limits and DOTNET_PROCESSOR_COUNT.
+    /// </summary>
+    public static int MachineLogicalProcessors()
+    {
+        var count = Kernel32.GetActiveProcessorCount(Kernel32.AllProcessorGroups);
+        return count > 0 ? (int)count : Environment.ProcessorCount; // 0 on failure
+    }
+}
