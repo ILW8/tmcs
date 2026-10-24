@@ -10,7 +10,8 @@ using Tmcs.Ui;
 
 namespace Tmcs.Tests;
 
-// Every form here is an OffscreenMainForm: off-screen, never activated, no taskbar entry. No test opens a menu or a dialog.
+// Every form here is an OffscreenMainForm: off-screen, never activated, no taskbar entry. Its helpers, and the rig's Dispose,
+// assert that after each interaction. No test opens a menu or a dialog.
 public sealed partial class MainFormTests : IDisposable
 {
     // Values the tests check are written out here rather than taken from production code, so a wrong constant shows up.
@@ -62,7 +63,6 @@ public sealed partial class MainFormTests : IDisposable
         Assert.Equal(3, rig.Form.Table.Count);
         Assert.Equal(1, rig.Snapshots.Reads);
         Assert.Equal(3, rig.Form.Icons.LiveCount);
-        rig.Form.AssertOffscreenAndInactive();
     });
 
     [Fact]
@@ -98,12 +98,46 @@ public sealed partial class MainFormTests : IDisposable
         Assert.Equal(UpdateSpeed.High, rig.Form.Clock.Speed);
         Assert.Equal(500, rig.Timer.IntervalMs);
         Assert.True(rig.Timer.Enabled);
-        Assert.NotEmpty(rig.Form.ZOrderChanges); // the window was moved into the topmost band ...
-        Assert.All(rig.Form.ZOrderChanges, flags => Assert.Equal(SwpNoActivate, flags & SwpNoActivate)); // ... without activating it
+        Assert.Equal(1, rig.Form.ZOrderChangesAtCreation); // the topmost move, made as the window was created, before it showed
+        Assert.All(rig.Form.ZOrderChanges, flags => Assert.Equal(SwpNoActivate, flags & SwpNoActivate)); // none activates the window
         Assert.True(Checked(rig.Form, CommandIds.AlwaysOnTop));
         var area = OffscreenMainForm.OffscreenArea;
         Assert.Equal(new Rectangle(area.X + (area.Width - 900) / 2, area.Y + (area.Height - 600) / 2, 900, 600), rig.Form.WindowRect);
-        rig.Form.AssertOffscreenAndInactive();
+    });
+
+    [Fact]
+    public void Saved_size_below_the_minimum_gives_a_window_of_the_minimum_size() => Sta.Run(() =>
+    {
+        var saved = AppSettings.CreateDefault();
+        saved.WindowX = 100; // goes through the off-screen working area, like any saved position
+        saved.WindowY = 100;
+        saved.WindowWidth = 10;
+        saved.WindowHeight = 10;
+        new SettingsStore(SettingsPath).Save(saved);
+
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+
+        var dpi = rig.Form.DeviceDpi;
+        var minimum = new Size(Scale(400, dpi), Scale(300, dpi));
+        Assert.Equal(minimum, rig.Form.MinimumSize);
+        Assert.Equal(minimum, rig.Form.WindowRect.Size);
+        Assert.True(OffscreenMainForm.OffscreenArea.Contains(rig.Form.WindowRect));
+    });
+
+    [Fact]
+    public void Offscreen_form_refuses_settings_that_would_maximize_it() => Sta.Run(() =>
+    {
+        var saved = AppSettings.CreateDefault();
+        saved.Maximized = true;
+        new SettingsStore(SettingsPath).Save(saved);
+        var icons = new FakeIconLoader();
+        var generic = icons.CreateGeneric();
+        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, generic, new FakeTimer(), new SettingsStore(SettingsPath), new LaunchOptions(null, null));
+
+        Assert.Throws<InvalidOperationException>(() => new OffscreenMainForm(services));
+
+        icons.DestroyIcon(generic); // refused before MainForm took it
     });
 
     [Fact]
@@ -139,7 +173,6 @@ public sealed partial class MainFormTests : IDisposable
         Assert.Equal([false, false, false, true], Checks(speed));
         User32.SendMessage(rig.Form.Handle, WmInitMenuPopup, options, 1);
         Assert.Equal([true], Checks(options));
-        rig.Form.AssertOffscreenAndInactive();
     });
 
     [Fact]
@@ -196,16 +229,17 @@ public sealed partial class MainFormTests : IDisposable
     });
 
     [Fact]
-    public void Always_on_top_command_toggles_TopMost() => Sta.Run(() =>
+    public void Always_on_top_command_toggles_its_check_mark_and_z_order_without_activation() => Sta.Run(() =>
     {
         using var rig = new Rig(SettingsPath);
         rig.Form.ShowOffscreen();
+        Assert.Equal(0, rig.Form.ZOrderChangesAtCreation); // off: no topmost move at creation
+        Assert.False(Checked(rig.Form, CommandIds.AlwaysOnTop));
         var changes = rig.Form.ZOrderChanges.Count;
 
         rig.Form.Command(CommandIds.AlwaysOnTop);
         Assert.True(rig.Form.ZOrderChanges.Count > changes);
         Assert.True(Checked(rig.Form, CommandIds.AlwaysOnTop));
-        rig.Form.AssertOffscreenAndInactive();
         changes = rig.Form.ZOrderChanges.Count;
 
         rig.Form.Command(CommandIds.AlwaysOnTop);
@@ -213,7 +247,6 @@ public sealed partial class MainFormTests : IDisposable
         Assert.False(Checked(rig.Form, CommandIds.AlwaysOnTop));
         Assert.All(rig.Form.ZOrderChanges, flags => Assert.Equal(SwpNoActivate, flags & SwpNoActivate));
         Assert.False(rig.Form.TopMost); // the WinForms property stays unused: its setter would activate the window
-        rig.Form.AssertOffscreenAndInactive();
     });
 
     [Fact]
@@ -230,7 +263,6 @@ public sealed partial class MainFormTests : IDisposable
         Assert.Equal(live - 1, rig.Form.Icons.LiveCount);
         Assert.Equal(2, rig.Form.Table.Count);
         Assert.Equal(3, rig.Form.Details.DisplayedRows.Count); // no view work while minimized
-        rig.Form.AssertOffscreenAndInactive();
     });
 
     [Fact]
@@ -247,7 +279,6 @@ public sealed partial class MainFormTests : IDisposable
 
         Assert.Equal([1, 3], rig.Form.Details.DisplayedRows.Select(r => r.Id.Pid).Order());
         Assert.Equal(reads, rig.Snapshots.Reads);
-        rig.Form.AssertOffscreenAndInactive();
     });
 
     [Fact]
@@ -359,7 +390,6 @@ public sealed partial class MainFormTests : IDisposable
         Assert.NotEqual(oldHandle, rig.Form.Handle);
         Assert.True(IsMenu(bar)); // detached before the old window was destroyed, so Windows did not destroy it
         Assert.Equal(bar, GetMenu(rig.Form.Handle));
-        rig.Form.AssertOffscreenAndInactive();
     });
 
     /// <summary>The check mark of the main menu item <paramref name="id"/>, as the menu would show it now.</summary>
@@ -458,6 +488,17 @@ public sealed partial class MainFormTests : IDisposable
             Form = new OffscreenMainForm(services);
         }
 
-        public void Dispose() => Form.Dispose();
+        /// <summary>Checks the window one last time, unless the test closed it, then disposes it.</summary>
+        public void Dispose()
+        {
+            try
+            {
+                if (Form.IsHandleCreated && !Form.IsDisposed) Form.AssertOffscreenAndInactive();
+            }
+            finally
+            {
+                Form.Dispose();
+            }
+        }
     }
 }

@@ -58,14 +58,12 @@ internal class MainForm : Form
         _services = services;
         _settings = services.Store.Load();
 
-        // Text and MinimumSize are virtual. The only subclass, the tests' off-screen form, overrides neither.
-        // ReSharper disable VirtualMemberCallInConstructor
-        Text = "tmcs";
+        // Text and MinimumSize are virtual. Setting them through base skips any override in a subclass not yet constructed.
+        base.Text = "tmcs";
         _appIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
         Icon = _appIcon;
-        MinimumSize = LogicalToDeviceUnits(new Size(400, 300));
+        base.MinimumSize = LogicalToDeviceUnits(new Size(400, 300));
         Size = new Size(_settings.WindowWidth, _settings.WindowHeight); // at least MinimumSize; the position is applied in OnLoad
-        // ReSharper restore VirtualMemberCallInConstructor
 
         var iconSize = User32.GetSystemMetricsForDpi(User32.SmCxSmIcon, (uint)DeviceDpi);
         _images = new NativeImageList(iconSize > 0 ? iconSize : 16);
@@ -193,8 +191,9 @@ internal class MainForm : Form
         switch (m.Msg)
         {
             // From the menu: no control handle, notification code 0.
-            case WmCommand when m.LParam == 0 && HiWord(m.WParam) == 0 && OnCommand(LoWord(m.WParam)):
-                return;
+            case WmCommand when m.LParam == 0 && HiWord(m.WParam) == 0:
+                if (OnCommand(LoWord(m.WParam))) return;
+                break;
             // Not for the window (system) menu.
             case WmInitMenuPopup when HiWord(m.LParam) == 0:
                 UpdateMenuChecks();
@@ -245,8 +244,9 @@ internal class MainForm : Form
         {
             _services.Snapshots.Read(_snapshot);
         }
-        catch (Exception)
+        catch (Exception e)
         {
+            Debug.WriteLine(e);
             return; // a failed read skips the tick: the list may be half-filled, so the table keeps the last snapshot's rows
         }
 
@@ -325,6 +325,7 @@ internal class MainForm : Form
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            Debug.WriteLine(e);
         }
     }
 }

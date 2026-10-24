@@ -7,7 +7,9 @@ namespace Tmcs.Tests.Support;
 /// The real <see cref="MainForm"/>, kept far off-screen, never activated, and absent from the taskbar and Alt-Tab, like
 /// <see cref="OffscreenForm"/>. Its only working area lies off every screen, so restoring a saved position can never move it
 /// onto the owner's monitor. It minimizes and restores through <c>SetWindowPlacement</c> with no-activate show commands,
-/// because setting <see cref="Form.WindowState"/> would activate another window.
+/// because setting <see cref="Form.WindowState"/> would activate another window. It refuses settings that would maximize it,
+/// since a maximized window fills a real monitor. Every helper that acts on the window ends with
+/// <see cref="AssertOffscreenAndInactive"/>.
 /// </summary>
 internal sealed partial class OffscreenMainForm : MainForm
 {
@@ -82,7 +84,10 @@ internal sealed partial class OffscreenMainForm : MainForm
     /// </summary>
     public readonly List<uint> ZOrderChanges = [];
 
-    public OffscreenMainForm(AppServices services) : base(services)
+    /// <summary>The <see cref="ZOrderChanges"/> count when the latest window creation finished, before the window was shown.</summary>
+    public int ZOrderChangesAtCreation { get; private set; }
+
+    public OffscreenMainForm(AppServices services) : base(RefuseMaximized(services))
     {
         ShowInTaskbar = false;
         // Only used when the settings hold no position yet; a saved one goes through the off-screen working area.
@@ -103,6 +108,12 @@ internal sealed partial class OffscreenMainForm : MainForm
     }
 
     protected override IReadOnlyList<Rectangle> WorkingAreas() => [OffscreenArea];
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ZOrderChangesAtCreation = ZOrderChanges.Count;
+    }
 
     protected override unsafe void WndProc(ref Message m)
     {
@@ -130,6 +141,7 @@ internal sealed partial class OffscreenMainForm : MainForm
     {
         Show();
         Application.DoEvents();
+        AssertOffscreenAndInactive();
     }
 
     /// <summary>Sends a menu command, as choosing the item would.</summary>
@@ -137,13 +149,16 @@ internal sealed partial class OffscreenMainForm : MainForm
     {
         User32.SendMessage(Handle, WmCommand, id, 0);
         Application.DoEvents();
+        AssertOffscreenAndInactive();
     }
 
     /// <summary>Runs the form's command-key handling for <paramref name="keys"/>, as a key press would.</summary>
     public bool PressKey(Keys keys)
     {
         var message = new Message();
-        return ProcessCmdKey(ref message, keys);
+        var handled = ProcessCmdKey(ref message, keys);
+        AssertOffscreenAndInactive();
+        return handled;
     }
 
     public void MinimizeWithoutActivation()
@@ -155,6 +170,7 @@ internal sealed partial class OffscreenMainForm : MainForm
         Assert.True(SetWindowPlacement(Handle, ref placement));
         Application.DoEvents();
         Assert.Equal(FormWindowState.Minimized, WindowState);
+        AssertOffscreenAndInactive();
     }
 
     public void RestoreWithoutActivation()
@@ -165,6 +181,7 @@ internal sealed partial class OffscreenMainForm : MainForm
         Assert.True(SetWindowPlacement(Handle, ref placement));
         Application.DoEvents();
         Assert.Equal(FormWindowState.Normal, WindowState);
+        AssertOffscreenAndInactive();
     }
 
     /// <summary>Destroys and recreates the window, as WinForms does when some styles change.</summary>
@@ -172,6 +189,7 @@ internal sealed partial class OffscreenMainForm : MainForm
     {
         RecreateHandle();
         Application.DoEvents();
+        AssertOffscreenAndInactive();
     }
 
     /// <summary>The window overlaps no screen, and neither the system nor this thread has made it the active window.</summary>
@@ -183,6 +201,12 @@ internal sealed partial class OffscreenMainForm : MainForm
         Assert.NotEqual(Handle, GetForegroundWindow());
         Assert.NotEqual(Handle, GetActiveWindow());
     }
+
+    /// <summary>Runs before the base constructor, so a refused form creates nothing.</summary>
+    private static AppServices RefuseMaximized(AppServices services) =>
+        services.Store.Load().Maximized
+            ? throw new InvalidOperationException("These settings would maximize the form, which puts it on a real monitor.")
+            : services;
 
     private Placement CurrentPlacement()
     {
