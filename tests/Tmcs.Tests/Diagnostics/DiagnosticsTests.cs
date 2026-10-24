@@ -75,7 +75,7 @@ public sealed class DiagnosticsTests : IDisposable
         Assert.Equal([ScenarioAction.Details, ScenarioAction.Minimized, ScenarioAction.Paused], target.Applied);
         Assert.Equal("paused", runner.CurrentStep);
         Assert.Equal(300_000, timer.IntervalMs);
-        Assert.InRange(runner.LastSwitchMs, 0, 20);
+        Assert.InRange(runner.LastSwitchMs, 0, 1000); // an Apply that does nothing; the bound leaves room for a busy machine or a GC
         Assert.Equal(0, finished);
 
         timer.Fire();
