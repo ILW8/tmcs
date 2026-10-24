@@ -14,7 +14,8 @@ internal readonly record struct RawProcess(
     int Handles,
     int SessionId,
     int BasePriority,
-    bool IsSuspended);
+    bool IsSuspended,
+    long WorkingSet = 0);
 
 internal interface IProcessSnapshotSource
 {

@@ -56,4 +56,35 @@ internal static unsafe partial class Kernel32
     [LibraryImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool IsProcessorFeaturePresent(uint feature);
+
+    /// <summary>The <c>MEMORYSTATUSEX</c> block. <see cref="Length"/> must be set to its size before the call.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MemoryStatusEx
+    {
+        public uint Length;
+        public uint MemoryLoad;
+        public ulong TotalPhys;
+        public ulong AvailPhys;
+        public ulong TotalPageFile;
+        public ulong AvailPageFile;
+        public ulong TotalVirtual;
+        public ulong AvailVirtual;
+        public ulong AvailExtendedVirtual;
+    }
+
+    /// <summary>The <c>'RSMB'</c> provider signature for <see cref="GetSystemFirmwareTable"/>.</summary>
+    public const uint RawSmbiosProvider = 0x52534D42;
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GlobalMemoryStatusEx(ref MemoryStatusEx status);
+
+    /// <param name="kilobytes">The installed memory in KB, from the SMBIOS memory devices.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetPhysicallyInstalledSystemMemory(out ulong kilobytes);
+
+    /// <returns>The table's size in bytes (what was copied, or what is needed when <paramref name="size"/> is too small), or 0 on failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial uint GetSystemFirmwareTable(uint provider, uint tableId, byte* buffer, uint size);
 }
