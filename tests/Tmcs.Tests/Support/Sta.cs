@@ -17,7 +17,11 @@ internal static class Sta
         {
             // Must stay the first statement: it has to run before any control or window exists on this thread.
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, threadScope: true);
-            try { body(); }
+            try
+            {
+                // Windows created in the body, and comctl32 imports first bound in it, come from comctl32 v6 as in the app.
+                using (CommonControls6.Activate()) body();
+            }
             catch (Exception ex) { failure = ExceptionDispatchInfo.Capture(ex); }
         });
         thread.SetApartmentState(ApartmentState.STA);
