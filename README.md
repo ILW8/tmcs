@@ -19,6 +19,8 @@ dotnet publish src/Tmcs -p:PublishProfile=win-x64
 
 The profile is `src/Tmcs/Properties/PublishProfiles/win-x64.pubxml`: Release, win-x64, self-contained, single file. The output is `artifacts/publish/tmcs.exe`, with a `tmcs.pdb` beside it and no other files. The exe needs no installed .NET runtime. `artifacts/` is git-ignored.
 
+Put `tmcs.exe` in a folder only administrators can write to, for example `C:\Program Files\tmcs\`: it runs elevated, and Windows loads some DLLs from the exe's own folder.
+
 ### Sign
 
 Sign the exe with your own certificate:

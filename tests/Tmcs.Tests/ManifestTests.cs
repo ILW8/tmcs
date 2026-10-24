@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Xml.Linq;
 
 namespace Tmcs.Tests;
@@ -36,4 +38,9 @@ public class ManifestTests
         Assert.Equal("win32", (string?)dependency.Attribute("type"));
         Assert.Equal("6595b64144ccf1df", (string?)dependency.Attribute("publicKeyToken"));
     }
+
+    // tmcs runs elevated: its P/Invokes must not load a DLL planted in the exe's folder.
+    [Fact]
+    public void Native_libraries_load_only_from_System32() =>
+        Assert.Equal(DllImportSearchPath.System32, typeof(MainForm).Assembly.GetCustomAttribute<DefaultDllImportSearchPathsAttribute>()?.Paths);
 }
