@@ -7,6 +7,8 @@ internal sealed class FakeInfo : IProcessInfoSource
 {
     public Dictionary<ProcessIdentity, int> Calls { get; } = new();
 
+    public int SidCacheCount => 0;
+
     public ProcessStaticInfo Query(ProcessIdentity id)
     {
         Calls[id] = Calls.GetValueOrDefault(id) + 1;

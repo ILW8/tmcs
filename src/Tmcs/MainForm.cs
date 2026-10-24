@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Tmcs.Details;
+using Tmcs.Diagnostics;
 using Tmcs.Icons;
 using Tmcs.Native;
 using Tmcs.Processes;
@@ -14,8 +15,10 @@ namespace Tmcs;
 /// table, the icon store and the Details view. Every sample applies a snapshot to the table, whatever is showing, so an exited
 /// process gives back its icon on the same tick. The Details view is refreshed only while it can be seen, and at once when it
 /// becomes visible again.
+/// In test mode (TMCS_DIAG set) it also runs the <see cref="TestHarness"/>, stays a background window that never takes focus or
+/// rises above other windows, and never saves the settings.
 /// </summary>
-internal class MainForm : Form
+internal class MainForm : Form, IScenarioTarget
 {
     private const int WmCommand = 0x0111;
     private const int WmInitMenuPopup = 0x0117;
@@ -41,6 +44,9 @@ internal class MainForm : Form
     private readonly System.Windows.Forms.Timer _saveTimer = new() { Interval = SaveDelayMs };
     private readonly Icon? _appIcon;
 
+    /// <summary>The diagnostics log and scenario. Test mode only.</summary>
+    private readonly TestHarness? _harness;
+
     // Reused by every sample.
     private readonly List<RawProcess> _snapshot = [];
     private readonly HashSet<int> _hungPids = [];
@@ -57,6 +63,14 @@ internal class MainForm : Form
     {
         _services = services;
         _settings = services.Store.Load();
+        if (TestMode)
+        {
+            // A normal window at the saved bounds, never on top, sampling at Normal whatever was saved, so every soak runs alike.
+            // Test mode never saves, so these stay in memory.
+            _settings.AlwaysOnTop = false;
+            _settings.Maximized = false;
+            _settings.UpdateSpeed = UpdateSpeed.Normal;
+        }
 
         // Text and MinimumSize are virtual. Setting them through base skips any override in a subclass not yet constructed.
         base.Text = "tmcs";
@@ -97,6 +111,8 @@ internal class MainForm : Form
         _saveTimer.Tick += (_, _) => SaveSettings();
         _clock = new SampleClock(services.Timer) { Speed = _settings.UpdateSpeed };
         _clock.Sample += OnSample;
+
+        if (TestMode) _harness = new TestHarness(this, services.Info, services.Options.DiagPath!, services.Options.Scenario);
     }
 
     internal ProcessTable Table => _table;
@@ -106,6 +122,8 @@ internal class MainForm : Form
     internal SampleClock Clock => _clock;
 
     internal DetailsView Details => _details;
+
+    internal TestHarness? Harness => _harness;
 
     /// <summary>
     /// The working areas a saved window position must reach, the primary screen's first: a position that reaches none of them is
@@ -126,11 +144,17 @@ internal class MainForm : Form
 
     private bool DetailsShowing => _tabs.SelectedTab == _detailsPage && WindowState != FormWindowState.Minimized;
 
+    private bool TestMode => _services.Options.IsTestMode;
+
+    /// <summary>Test mode shows the window without activating it: it runs behind the owner's windows and never takes focus.</summary>
+    protected override bool ShowWithoutActivation => TestMode;
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
         User32.SetMenu(Handle, _menu.Handle);
-        if (_settings.AlwaysOnTop) ApplyAlwaysOnTop();
+        if (TestMode) SinkToBottom(); // before it first shows, so it never appears above another window
+        else if (_settings.AlwaysOnTop) ApplyAlwaysOnTop();
     }
 
     protected override void OnHandleDestroyed(EventArgs e)
@@ -150,6 +174,15 @@ internal class MainForm : Form
         if (_settings.Maximized) WindowState = FormWindowState.Maximized;
         _loaded = true;
         _clock.RefreshNow();
+    }
+
+    /// <summary>Test mode: once shown without activation, the window goes to the bottom of the z-order, then the scenario starts.</summary>
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        if (_harness is null) return;
+        SinkToBottom();
+        _harness.Start();
     }
 
     protected override void OnMove(EventArgs e)
@@ -209,6 +242,7 @@ internal class MainForm : Form
         {
             _saveTimer.Dispose();
             (_services.Timer as IDisposable)?.Dispose();
+            _harness?.Dispose();
         }
 
         // Destroys the window, which detaches the menu, and the list view, which only borrows the image list.
@@ -221,6 +255,34 @@ internal class MainForm : Form
             _appIcon?.Dispose();
         }
     }
+
+    /// <summary>
+    /// A scenario step, done synchronously so the runner's stopwatch covers what a user would wait for: the restore with its view
+    /// step and the speed change. Unpaused is always Normal. The window is never activated, and after a restore it is sunk again,
+    /// since restoring can raise it.
+    /// </summary>
+    void IScenarioTarget.Apply(ScenarioAction a)
+    {
+        if (a == ScenarioAction.Minimized)
+        {
+            _clock.Speed = UpdateSpeed.Normal;
+            if (!User32.IsIconic(Handle)) ShowMinimizedWithoutActivation();
+            return;
+        }
+
+        if (User32.IsIconic(Handle))
+        {
+            SinkToBottom();
+            User32.ShowWindow(Handle, User32.SwShowNoActivate); // WM_SIZE arrives before this returns: OnResize runs the view step
+            SinkToBottom();
+        }
+
+        _tabs.SelectedTab = _detailsPage;
+        _clock.Speed = a == ScenarioAction.Paused ? UpdateSpeed.Paused : UpdateSpeed.Normal;
+    }
+
+    /// <summary>Minimizes the window without activating it. Tests pin the minimized position off-screen.</summary>
+    protected virtual void ShowMinimizedWithoutActivation() => User32.ShowWindow(Handle, User32.SwShowMinNoActive);
 
     private static (NativeMenu Bar, NativeMenu Speed) CreateMenu()
     {
@@ -296,23 +358,32 @@ internal class MainForm : Form
         User32.SetWindowPos(Handle, _settings.AlwaysOnTop ? User32.HwndTopmost : User32.HwndNoTopmost, 0, 0, 0, 0,
             User32.SwpNoMove | User32.SwpNoSize | User32.SwpNoActivate);
 
+    /// <summary>Moves the window to the bottom of the z-order without activating it.</summary>
+    private void SinkToBottom() =>
+        User32.SetWindowPos(Handle, User32.HwndBottom, 0, 0, 0, 0, User32.SwpNoActivate | User32.SwpNoMove | User32.SwpNoSize);
+
     private void UpdateMenuChecks()
     {
         _speedMenu.CheckRadio(CommandIds.SpeedHigh, CommandIds.SpeedPaused, CommandIds.ForSpeed(_clock.Speed));
         _menu.SetChecked(CommandIds.AlwaysOnTop, _settings.AlwaysOnTop);
     }
 
-    /// <summary>Restarts the one-shot save timer.</summary>
+    /// <summary>Restarts the one-shot save timer. Test mode never saves.</summary>
     private void ScheduleSave()
     {
+        if (TestMode) return;
         _saveTimer.Stop();
         _saveTimer.Start();
     }
 
-    /// <summary>Saves the settings with the window's normal bounds. A failed write is dropped: the next change or the exit tries again.</summary>
+    /// <summary>
+    /// Saves the settings with the window's normal bounds. A failed write is dropped: the next change or the exit tries again.
+    /// Test mode never saves: the soak runs on the owner's real settings file.
+    /// </summary>
     private void SaveSettings()
     {
         _saveTimer.Stop();
+        if (TestMode) return;
         var normal = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
         _settings.WindowX = normal.X;
         _settings.WindowY = normal.Y;

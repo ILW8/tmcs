@@ -24,6 +24,8 @@ internal sealed unsafe class ProcessInfoSource : IProcessInfoSource
 
     public ProcessInfoSource(SidNameCache sids) => _sids = sids;
 
+    public int SidCacheCount => _sids.Count;
+
     /// <summary>
     /// Enables <c>SeDebugPrivilege</c> on this process's token, which lets the queries below open processes owned by other accounts.
     /// Returns false when the token does not hold the privilege (not elevated) or the call fails. Never throws.

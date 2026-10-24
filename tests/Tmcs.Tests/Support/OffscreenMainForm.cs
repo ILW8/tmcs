@@ -163,11 +163,7 @@ internal sealed partial class OffscreenMainForm : MainForm
 
     public void MinimizeWithoutActivation()
     {
-        var placement = CurrentPlacement();
-        placement.Flags = WpfSetMinPosition;
-        placement.ShowCmd = SwShowMinNoActive;
-        placement.MinPosition = new NativePoint { X = -32000, Y = -32000 };
-        Assert.True(SetWindowPlacement(Handle, ref placement));
+        ShowMinimizedWithoutActivation();
         Application.DoEvents();
         Assert.Equal(FormWindowState.Minimized, WindowState);
         AssertOffscreenAndInactive();
@@ -182,6 +178,20 @@ internal sealed partial class OffscreenMainForm : MainForm
         Application.DoEvents();
         Assert.Equal(FormWindowState.Normal, WindowState);
         AssertOffscreenAndInactive();
+    }
+
+    /// <summary>
+    /// The form's own minimize, used by test mode's scenario as well as <see cref="MinimizeWithoutActivation"/>: the same
+    /// no-activate show command, given through <c>SetWindowPlacement</c> with the minimized position pinned off-screen. A window
+    /// with no taskbar button would otherwise minimize to a small caption in the corner of a real screen.
+    /// </summary>
+    protected override void ShowMinimizedWithoutActivation()
+    {
+        var placement = CurrentPlacement();
+        placement.Flags = WpfSetMinPosition;
+        placement.ShowCmd = SwShowMinNoActive;
+        placement.MinPosition = new NativePoint { X = -32000, Y = -32000 };
+        Assert.True(SetWindowPlacement(Handle, ref placement));
     }
 
     /// <summary>Destroys and recreates the window, as WinForms does when some styles change.</summary>

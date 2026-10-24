@@ -482,9 +482,9 @@ public sealed partial class MainFormTests : IDisposable
         public readonly FakeTimer Timer = new();
         public readonly OffscreenMainForm Form;
 
-        public Rig(string settingsPath)
+        public Rig(string settingsPath, LaunchOptions? options = null)
         {
-            var services = new AppServices(Snapshots, new FakeInfo(), Icons, Icons.CreateGeneric(), Timer, new SettingsStore(settingsPath), new LaunchOptions(null, null));
+            var services = new AppServices(Snapshots, new FakeInfo(), Icons, Icons.CreateGeneric(), Timer, new SettingsStore(settingsPath), options ?? new LaunchOptions(null, null));
             Form = new OffscreenMainForm(services);
         }
 

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Tmcs.Diagnostics;
 using Tmcs.Native;
 using Tmcs.Processes;
 
@@ -8,25 +9,62 @@ static class Program
 {
     private const string SingleInstanceMutex = @"Local\tmcs.single-instance";
 
+    /// <summary>The exit code of a test run whose scenario does not parse.</summary>
+    internal const int BadScenarioExitCode = 2;
+
     /// <summary>True while the error dialog is up. Another exception meanwhile, such as the next timer tick's, is dropped rather than stacking a second dialog.</summary>
     private static bool _showingError;
 
     [STAThread]
-    static void Main()
+    static int Main()
     {
         // Read first: test mode skips the single-instance check.
         var options = LaunchOptions.FromProcessEnvironment();
+        if (!CheckScenario(options)) return BadScenarioExitCode;
+
         using var instance = options.IsTestMode ? null : ClaimSingleInstance(); // held until tmcs exits
         if (!options.IsTestMode && instance is null)
         {
             ActivateRunningInstance();
-            return;
+            return 0;
         }
 
         ApplicationConfiguration.Initialize();
         Application.ThreadException += OnThreadException;
         ProcessInfoSource.TryEnableDebugPrivilege(); // only succeeds when elevated
         Application.Run(new MainForm(AppServices.CreateReal(options)));
+        return 0;
+    }
+
+    /// <summary>
+    /// Checks test mode's scenario before any window exists. A run nobody watches gets no dialog: a spec that does not parse
+    /// leaves the parser's message in <c>DiagPath + ".error.txt"</c>, and tmcs exits with <see cref="BadScenarioExitCode"/>.
+    /// Outside test mode the scenario is ignored.
+    /// </summary>
+    /// <returns>False when tmcs must exit with <see cref="BadScenarioExitCode"/>.</returns>
+    internal static bool CheckScenario(LaunchOptions options)
+    {
+        if (options is not { IsTestMode: true, Scenario: { } spec }) return true;
+        try
+        {
+            ScenarioParser.Parse(spec);
+            return true;
+        }
+        catch (FormatException e)
+        {
+            var errorPath = options.DiagPath + ".error.txt";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(errorPath))!);
+                File.WriteAllText(errorPath, e.Message + Environment.NewLine);
+            }
+            catch (Exception io) when (io is IOException or UnauthorizedAccessException)
+            {
+                Debug.WriteLine(io); // the exit code still reports the bad scenario
+            }
+
+            return false;
+        }
     }
 
     /// <returns>The mutex that marks this process as the running instance, or null when another instance exists.</returns>

@@ -7,4 +7,7 @@ internal interface IProcessInfoSource
     /// Never throws: on any failure it returns <see cref="ProcessStaticInfo.Blank"/>, or partial info when some of the values could still be read.
     /// </summary>
     ProcessStaticInfo Query(ProcessIdentity id);
+
+    /// <summary>Account names cached for the User name column. Read by test mode's diagnostics log.</summary>
+    int SidCacheCount { get; }
 }

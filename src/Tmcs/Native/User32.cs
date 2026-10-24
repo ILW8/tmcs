@@ -7,6 +7,9 @@ internal static partial class User32
     /// <summary><c>GR_GDIOBJECTS</c>: count the process's GDI objects.</summary>
     public const uint GrGdiObjects = 0;
 
+    /// <summary><c>GR_USEROBJECTS</c>: count the process's USER objects.</summary>
+    public const uint GrUserObjects = 1;
+
     /// <summary><c>LVM_SETIMAGELIST</c>: wParam is an <c>LVSIL_*</c> value, lParam the <c>HIMAGELIST</c>.</summary>
     public const uint LvmSetImageList = 0x1003;
 
@@ -82,6 +85,12 @@ internal static partial class User32
     /// <summary><c>SW_RESTORE</c>: un-minimizes a window. On a maximized window that is not minimized it un-maximizes it.</summary>
     public const int SwRestore = 9;
 
+    /// <summary><c>SW_SHOWNOACTIVATE</c>: shows a window at its normal size and position, restoring a minimized one, without activating it.</summary>
+    public const int SwShowNoActivate = 4;
+
+    /// <summary><c>SW_SHOWMINNOACTIVE</c>: minimizes a window without activating it.</summary>
+    public const int SwShowMinNoActive = 7;
+
     /// <summary><c>SWP_NOSIZE</c>.</summary>
     public const uint SwpNoSize = 0x1;
 
@@ -96,6 +105,9 @@ internal static partial class User32
 
     /// <summary><c>HWND_NOTOPMOST</c>: moves a window out of the topmost band.</summary>
     public const nint HwndNoTopmost = -2;
+
+    /// <summary><c>HWND_BOTTOM</c>: moves a window to the bottom of the z-order, out of the topmost band.</summary>
+    public const nint HwndBottom = 1;
 
     /// <summary><c>TPM_RIGHTBUTTON</c>: items can be chosen with either mouse button.</summary>
     public const uint TpmRightButton = 0x2;
