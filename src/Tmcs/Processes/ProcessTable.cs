@@ -30,11 +30,11 @@ internal sealed class ProcessTable
     public event Action<ProcessRow>? Removed;
 
     /// <param name="snapshot">Every process currently alive, as read by the snapshot source.</param>
-    /// <param name="timestamp100ns">Monotonic time of this snapshot in 100 ns ticks; the CPU wall delta is taken against the previous call.</param>
-    public void Apply(List<RawProcess> snapshot, long timestamp100ns)
+    /// <param name="timestamp100Ns">Monotonic time of this snapshot in 100 ns ticks; the CPU wall delta is taken against the previous call.</param>
+    public void Apply(List<RawProcess> snapshot, long timestamp100Ns)
     {
-        long wallDelta = timestamp100ns - _lastTimestamp;
-        _lastTimestamp = timestamp100ns;
+        long wallDelta = timestamp100Ns - _lastTimestamp;
+        _lastTimestamp = timestamp100Ns;
         _seen.Clear();
         _newIndexes.Clear();
 

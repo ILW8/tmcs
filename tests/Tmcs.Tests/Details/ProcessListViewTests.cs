@@ -341,6 +341,8 @@ public partial class ProcessListViewTests
         var requests = 0;
         using var form = Host(out var list, row: i =>
         {
+            // The test resets the count once the form has shown.
+            // ReSharper disable once AccessToModifiedClosure
             requests++;
             return new ListViewItem(Cells(i));
         });
@@ -371,6 +373,8 @@ public partial class ProcessListViewTests
     {
         using var form = Host(out var list);
         var raised = 0;
+        // The test resets the count once the form has shown.
+        // ReSharper disable once AccessToModifiedClosure
         list.CacheVirtualItems += (_, _) => raised++;
         list.CellSource = new FakeCells();
         form.ShowOffscreen();

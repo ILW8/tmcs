@@ -339,7 +339,10 @@ internal static partial class User32
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial nint CreatePopupMenu();
 
+    /// <param name="menu">The menu bar or popup menu to append to.</param>
+    /// <param name="flags">The <c>MF_</c> flags: the item's kind and state.</param>
     /// <param name="id">The item's command id, or the submenu handle when <paramref name="flags"/> has <see cref="MfPopup"/>.</param>
+    /// <param name="text">The item's text, or null for a separator.</param>
     [LibraryImport("user32.dll", EntryPoint = "AppendMenuW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool AppendMenu(nint menu, uint flags, nuint id, string? text);
@@ -365,6 +368,8 @@ internal static partial class User32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetMenu(nint hwnd, nint menu);
 
+    /// <param name="menu">The menu that holds the item, or one of its ancestors.</param>
+    /// <param name="item">The item's command id.</param>
     /// <param name="flags"><see cref="MfChecked"/> or 0, by command id (which also searches submenus).</param>
     /// <returns>The item's previous check state, or -1 when the item does not exist.</returns>
     [LibraryImport("user32.dll")]

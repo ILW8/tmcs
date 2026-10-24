@@ -126,9 +126,9 @@ public partial class DetailsViewTests
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool DeleteObject(nint obj);
 
-    [LibraryImport("gdi32.dll")]
+    [LibraryImport("gdi32.dll", EntryPoint = "DeleteDC")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool DeleteDC(nint hdc);
+    private static partial bool DeleteDc(nint hdc);
 
     [Fact]
     public void Shows_visible_columns_in_settings_order() => Sta.Run(() =>
@@ -464,6 +464,8 @@ public partial class DetailsViewTests
         var list = rig.List;
         list.SelectedIndices.Add(3);
         var retrieved = 0;
+        // Measure resets the count before each paint it measures.
+        // ReSharper disable once AccessToModifiedClosure
         list.RetrieveVirtualItem += (_, _) => retrieved++;
         var cells = new CountingCells(list.CellSource!);
         list.CellSource = cells;
@@ -760,7 +762,7 @@ public partial class DetailsViewTests
         var screen = GetDC(0);
         var dc = CreateCompatibleDC(screen);
         var bitmap = CreateCompatibleBitmap(screen, width, height);
-        ReleaseDC(0, screen);
+        _ = ReleaseDC(0, screen);
         try
         {
             var old = SelectObject(dc, bitmap);
@@ -782,8 +784,8 @@ public partial class DetailsViewTests
         }
         finally
         {
-            DeleteDC(dc);
-            DeleteObject(bitmap);
+            _ = DeleteDc(dc);
+            _ = DeleteObject(bitmap);
         }
     }
 

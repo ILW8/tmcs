@@ -25,6 +25,9 @@ internal static unsafe partial class Kernel32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetProcessTimes(nint process, out long creationTime, out long exitTime, out long kernelTime, out long userTime);
 
+    /// <param name="process">A handle with at least <see cref="ProcessQueryLimitedInformation"/>.</param>
+    /// <param name="flags">0 for a Win32 path, <c>PROCESS_NAME_NATIVE</c> (1) for a native one.</param>
+    /// <param name="name">Receives the path, with a terminator.</param>
     /// <param name="size">In: capacity of <paramref name="name"/> in chars. Out: chars written, excluding the terminator.</param>
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
