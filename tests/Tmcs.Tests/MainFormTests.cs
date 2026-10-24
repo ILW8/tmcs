@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Tmcs.Details;
 using Tmcs.Icons;
 using Tmcs.Native;
+using Tmcs.Performance;
 using Tmcs.Processes;
 using Tmcs.Sampling;
 using Tmcs.Settings;
@@ -19,6 +20,10 @@ public sealed partial class MainFormTests : IDisposable
     private const uint MfByPosition = 0x400;
     private const uint MfChecked = 0x8;
     private const uint SwpNoActivate = 0x10;
+    private const uint WmDeviceChange = 0x0219;
+    private const nint DbtDevNodesChanged = 0x0007;
+    private const nint DbtDeviceArrival = 0x8000;
+    private const nint DbtDeviceRemoveComplete = 0x8004;
 
     // The directory does not exist until a form saves, so a test can tell whether anything was written.
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "tmcs-tests-" + Guid.NewGuid().ToString("N"));
@@ -133,7 +138,7 @@ public sealed partial class MainFormTests : IDisposable
         new SettingsStore(SettingsPath).Save(saved);
         var icons = new FakeIconLoader();
         var generic = icons.CreateGeneric();
-        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, generic, new FakeTimer(), new SettingsStore(SettingsPath), new LaunchOptions(null, null));
+        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, generic, new FakeTimer(), new SettingsStore(SettingsPath), new LaunchOptions(null, null), FakeDeviceSources.Create());
 
         Assert.Throws<InvalidOperationException>(() => new OffscreenMainForm(services));
 
@@ -229,6 +234,64 @@ public sealed partial class MainFormTests : IDisposable
     });
 
     [Fact]
+    public void Every_sample_feeds_the_model_on_any_tab_and_minimized() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        var history = rig.Form.Performance.Cpu.History;
+        Assert.Equal(1, history.Count); // the first sample, as the window loaded
+
+        var tabs = rig.Form.Controls.OfType<TabControl>().Single();
+        var expected = history.Count;
+        foreach (TabPage page in tabs.TabPages)
+        {
+            tabs.SelectedTab = page;
+            rig.Timer.Fire();
+            Assert.Equal(++expected, history.Count);
+        }
+
+        rig.Form.MinimizeWithoutActivation();
+        rig.Timer.Fire();
+        Assert.Equal(++expected, history.Count);
+    });
+
+    [Fact]
+    public void Paused_reads_no_devices_and_refresh_now_reads_once() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        var cpu = rig.Devices.FakeCpu();
+        var reads = cpu.Reads;
+
+        rig.Form.Command(CommandIds.SpeedPaused);
+        rig.Timer.Fire();
+        rig.Timer.Fire();
+        Assert.Equal(reads, cpu.Reads);
+
+        Assert.True(rig.Form.PressKey(Keys.F5));
+        Assert.Equal(reads + 1, cpu.Reads);
+    });
+
+    [Fact]
+    public void Device_change_message_rescans_on_the_next_sample() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        var disks = rig.Devices.FakeDisks();
+
+        foreach (var change in new[] { DbtDevNodesChanged, DbtDeviceArrival, DbtDeviceRemoveComplete })
+        {
+            var enumerations = disks.Enumerations;
+
+            User32.SendMessage(rig.Form.Handle, WmDeviceChange, change, 0);
+            Assert.Equal(enumerations, disks.Enumerations);
+
+            rig.Timer.Fire();
+            Assert.Equal(enumerations + 1, disks.Enumerations);
+        }
+    });
+
+    [Fact]
     public void Always_on_top_command_toggles_its_check_mark_and_z_order_without_activation() => Sta.Run(() =>
     {
         using var rig = new Rig(SettingsPath);
@@ -286,6 +349,7 @@ public sealed partial class MainFormTests : IDisposable
     {
         using var rig = new Rig(SettingsPath);
         rig.Form.ShowOffscreen();
+        var cpuReads = rig.Devices.FakeCpu().Reads;
 
         rig.Snapshots.Fail = true;
         rig.Snapshots.Processes.Clear();
@@ -295,11 +359,13 @@ public sealed partial class MainFormTests : IDisposable
         Assert.Equal(3, rig.Form.Table.Count);
         Assert.Equal(3, rig.Form.Details.DisplayedRows.Count);
         Assert.Equal(3, rig.Form.Icons.LiveCount);
+        Assert.Equal(cpuReads, rig.Devices.FakeCpu().Reads); // the whole tick is skipped, devices included
 
         rig.Snapshots.Fail = false;
         rig.Form.Clock.RefreshNow();
         Assert.Equal(0, rig.Form.Table.Count);
         Assert.Empty(rig.Form.Details.DisplayedRows);
+        Assert.Equal(cpuReads + 1, rig.Devices.FakeCpu().Reads);
     });
 
     [Fact]
@@ -480,11 +546,12 @@ public sealed partial class MainFormTests : IDisposable
         public readonly FakeSnapshots Snapshots = new();
         public readonly FakeIconLoader Icons = new();
         public readonly FakeTimer Timer = new();
+        public readonly DeviceSources Devices = FakeDeviceSources.Create();
         public readonly OffscreenMainForm Form;
 
         public Rig(string settingsPath, LaunchOptions? options = null)
         {
-            var services = new AppServices(Snapshots, new FakeInfo(), Icons, Icons.CreateGeneric(), Timer, new SettingsStore(settingsPath), options ?? new LaunchOptions(null, null));
+            var services = new AppServices(Snapshots, new FakeInfo(), Icons, Icons.CreateGeneric(), Timer, new SettingsStore(settingsPath), options ?? new LaunchOptions(null, null), Devices);
             Form = new OffscreenMainForm(services);
         }
 

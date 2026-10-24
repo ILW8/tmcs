@@ -3,22 +3,6 @@ using Tmcs.Devices.Disk;
 
 namespace Tmcs.Tests.Devices;
 
-internal sealed class FakeDiskSource : IDiskSource
-{
-    public DiskCounters Counters { get; set; }
-    public bool Succeeds { get; set; } = true;
-
-    public IReadOnlyList<DiskInfo> Enumerate() => [];
-
-    public bool Read(int number, out DiskCounters counters)
-    {
-        counters = Counters;
-        return Succeeds;
-    }
-
-    public void Dispose() { }
-}
-
 public sealed class DiskDeviceTests
 {
     const long Mib = 1 << 20;

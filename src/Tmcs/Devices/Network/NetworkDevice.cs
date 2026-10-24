@@ -11,7 +11,7 @@ internal sealed class NetworkDevice(INetworkSource source, AdapterInfo info) : D
     bool _hasPrevious;
     bool _failed;
 
-    public AdapterInfo Info { get; } = info;
+    public AdapterInfo Info { get; private set; } = info;
 
     public override string Title => Info.IsWifi ? "Wi-Fi" : "Ethernet";
     public override string Subtitle => Info.Description;
@@ -24,6 +24,12 @@ internal sealed class NetworkDevice(INetworkSource source, AdapterInfo info) : D
 
     /// <summary>The reference couldn't find Task Manager's mapping; this one gives the captured 4 of 5 bars at quality 60-79.</summary>
     public static int SignalBars(int quality) => quality <= 0 ? 0 : Math.Min(5, quality / 20 + 1);
+
+    /// <summary>
+    /// A rescan's info for the same interface GUID, e.g. a new address after a DHCP renewal. The history and the rate baseline
+    /// are kept, so the graph goes on.
+    /// </summary>
+    public void Update(AdapterInfo info) => Info = info;
 
     public override void Sample(long time100Ns, IReadOnlyList<RawProcess> snapshot)
     {

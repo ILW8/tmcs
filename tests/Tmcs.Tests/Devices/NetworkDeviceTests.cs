@@ -1,27 +1,6 @@
-using Tmcs.Devices;
 using Tmcs.Devices.Network;
 
 namespace Tmcs.Tests.Devices;
-
-internal sealed class FakeNetworkSource : INetworkSource
-{
-    public AdapterCounters Counters { get; set; }
-    public bool Succeeds { get; set; } = true;
-    public WifiInfo? Wifi { get; set; }
-    public bool Changed => false;
-
-    public IReadOnlyList<AdapterInfo> Enumerate() => [];
-
-    public bool Read(ulong luid, out AdapterCounters counters)
-    {
-        counters = Counters;
-        return Succeeds;
-    }
-
-    public WifiInfo? ReadWifi(Guid interfaceGuid) => Wifi;
-
-    public void Dispose() { }
-}
 
 public sealed class NetworkDeviceTests
 {

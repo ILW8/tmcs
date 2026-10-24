@@ -37,6 +37,18 @@ internal static partial class User32
     /// </summary>
     public const int WmReflectNotify = 0x204E;
 
+    /// <summary><c>WM_DEVICECHANGE</c>: broadcast to every top-level window without registering. wParam is a <c>DBT_*</c> event.</summary>
+    public const int WmDeviceChange = 0x0219;
+
+    /// <summary><c>DBT_DEVNODES_CHANGED</c>: a device was added to or removed from the system.</summary>
+    public const nint DbtDevNodesChanged = 0x0007;
+
+    /// <summary><c>DBT_DEVICEARRIVAL</c>.</summary>
+    public const nint DbtDeviceArrival = 0x8000;
+
+    /// <summary><c>DBT_DEVICEREMOVECOMPLETE</c>.</summary>
+    public const nint DbtDeviceRemoveComplete = 0x8004;
+
     /// <summary><c>LVN_GETDISPINFOW</c>: an owner-data list view asks for an item's text, image or indent. lParam is an <see cref="NmLvDispInfo"/>.</summary>
     public const int LvnGetDispInfoW = -177;
 

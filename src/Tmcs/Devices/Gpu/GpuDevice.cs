@@ -11,7 +11,7 @@ internal sealed class GpuDevice(GpuInfo info) : Device($"gpu:{info.Luid:x}", Dev
 {
     readonly float[] _values = new float[7];
 
-    public GpuInfo Info { get; } = info;
+    public GpuInfo Info { get; private set; } = info;
 
     public override string Title => $"GPU {Info.Index}";
     public override string PaneTitle => "GPU";
@@ -21,6 +21,9 @@ internal sealed class GpuDevice(GpuInfo info) : Device($"gpu:{info.Luid:x}", Dev
 
     /// <summary>e.g. <c>(38 °C)</c>, which the sidebar draws after the utilization; null without a temperature.</summary>
     public string? TemperatureText => Counters.TemperatureC is { } t ? "(" + PerfFormat.Celsius(t) + ")" : null;
+
+    /// <summary>A rescan's info for the same LUID: the index moves when another GPU goes. The history is kept.</summary>
+    public void Update(GpuInfo info) => Info = info;
 
     /// <summary>The model reads every GPU with one <see cref="IGpuSource.ReadAll"/> and hands each its entry through <see cref="Accept"/>.</summary>
     public override void Sample(long time100Ns, IReadOnlyList<RawProcess> snapshot) { }

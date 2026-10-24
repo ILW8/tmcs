@@ -10,7 +10,7 @@ internal sealed class DiskDevice(IDiskSource source, DiskInfo info) : Device($"d
     bool _hasPrevious;
     bool _failed;
 
-    public DiskInfo Info { get; } = info;
+    public DiskInfo Info { get; private set; } = info;
 
     public override string Title => Info.Letters.Length == 0 ? $"Disk {Info.Number}" : $"Disk {Info.Number} ({Info.Letters})";
     public override string Subtitle => Info.Model;
@@ -20,6 +20,9 @@ internal sealed class DiskDevice(IDiskSource source, DiskInfo info) : Device($"d
     public double ResponseMs { get; private set; }
     public double ReadBytesPerSecond { get; private set; }
     public double WriteBytesPerSecond { get; private set; }
+
+    /// <summary>A rescan's info for the same disk number: the letters may have changed. The history and the rate baseline are kept.</summary>
+    public void Update(DiskInfo info) => Info = info;
 
     public override void Sample(long time100Ns, IReadOnlyList<RawProcess> snapshot)
     {

@@ -3,6 +3,7 @@ using Tmcs.Details;
 using Tmcs.Diagnostics;
 using Tmcs.Icons;
 using Tmcs.Native;
+using Tmcs.Performance;
 using Tmcs.Processes;
 using Tmcs.Sampling;
 using Tmcs.Settings;
@@ -12,9 +13,9 @@ namespace Tmcs;
 
 /// <summary>
 /// The main window: the native menu bar, the tabs (only Details so far) and the wiring between the sample clock, the process
-/// table, the icon store and the Details view. Every sample applies a snapshot to the table, whatever is showing, so an exited
-/// process gives back its icon on the same tick. The Details view is refreshed only while it can be seen, and at once when it
-/// becomes visible again.
+/// table, the icon store, the performance model and the Details view. Every sample applies a snapshot to the table and reads every
+/// device, whatever is showing, so an exited process gives back its icon on the same tick and the graphs never miss a point. The
+/// Details view is refreshed only while it can be seen, and at once when it becomes visible again.
 /// In test mode (TMCS_DIAG set) it also runs the <see cref="TestHarness"/>, stays a background window that never takes focus or
 /// rises above other windows, and never saves the settings.
 /// </summary>
@@ -29,6 +30,7 @@ internal class MainForm : Form, IScenarioTarget
     private readonly AppServices _services;
     private readonly AppSettings _settings;
     private readonly ProcessTable _table;
+    private readonly PerformanceModel _performance;
     private readonly NativeImageList _images;
     private readonly IconStore _icons;
     private readonly HungWindowScanner _hungScanner = new();
@@ -94,6 +96,8 @@ internal class MainForm : Form, IScenarioTarget
         _table.Added += row => row.IconSlot = _icons.Acquire(row.Info.ImagePath);
         _table.Removed += row => _icons.Release(row.Info.ImagePath);
 
+        _performance = new PerformanceModel(services.Devices);
+
         _details = new DetailsView(_table, _images, _settings) { Dock = DockStyle.Fill };
         _details.SettingsChanged += (_, _) => ScheduleSave();
         _detailsPage = new TabPage("Details");
@@ -116,6 +120,8 @@ internal class MainForm : Form, IScenarioTarget
     }
 
     internal ProcessTable Table => _table;
+
+    internal PerformanceModel Performance => _performance;
 
     internal IconStore Icons => _icons;
 
@@ -231,6 +237,10 @@ internal class MainForm : Form, IScenarioTarget
             case WmInitMenuPopup when HiWord(m.LParam) == 0:
                 UpdateMenuChecks();
                 break;
+            // A device came or went: the disks and GPUs are listed again at the next sample. DefWndProc still answers it.
+            case User32.WmDeviceChange when m.WParam is User32.DbtDevNodesChanged or User32.DbtDeviceArrival or User32.DbtDeviceRemoveComplete:
+                _performance.MarkDevicesChanged();
+                break;
         }
 
         base.WndProc(ref m);
@@ -243,6 +253,7 @@ internal class MainForm : Form, IScenarioTarget
             _saveTimer.Dispose();
             (_services.Timer as IDisposable)?.Dispose();
             _harness?.Dispose();
+            _performance.Dispose(); // after the timer, so no sample reads a disposed source
         }
 
         // Destroys the window, which detaches the menu, and the list view, which only borrows the image list.
@@ -299,7 +310,10 @@ internal class MainForm : Form, IScenarioTarget
 
     private static int HiWord(nint value) => (int)((value >> 16) & 0xFFFF);
 
-    /// <summary>One sample: read a snapshot, apply it to the table, and refresh the view if it can be seen.</summary>
+    /// <summary>
+    /// One sample: read a snapshot, apply it to the table, read every device at the same time stamp, and refresh the view if it can
+    /// be seen.
+    /// </summary>
     private void OnSample()
     {
         try
@@ -309,10 +323,14 @@ internal class MainForm : Form, IScenarioTarget
         catch (Exception e)
         {
             Debug.WriteLine(e);
-            return; // a failed read skips the tick: the list may be half-filled, so the table keeps the last snapshot's rows
+            // A failed read skips the whole tick, devices included: the list may be half-filled, so the table keeps the last
+            // snapshot's rows, and every graph misses the same point rather than half a tick being taken.
+            return;
         }
 
-        _table.Apply(_snapshot, Stopwatch.GetElapsedTime(_startTimestamp).Ticks); // TimeSpan ticks are 100 ns
+        var t = Stopwatch.GetElapsedTime(_startTimestamp).Ticks; // TimeSpan ticks are 100 ns
+        _table.Apply(_snapshot, t);
+        _performance.Sample(t, _snapshot);
         if (DetailsShowing) RefreshView();
     }
 

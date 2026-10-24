@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
@@ -7,7 +8,8 @@ namespace Tmcs.Devices.Cpu;
 
 /// <summary>
 /// Reads <c>% Processor Utility</c> and <c>% Privileged Utility</c> for every logical processor, plus the total
-/// <c>% Processor Performance</c>, from one PDH query that lives as long as the source.
+/// <c>% Processor Performance</c>, from one PDH query that lives as long as the source. Without the counters (PDH disabled or
+/// corrupt) the source still opens, and every read fails.
 /// </summary>
 internal sealed unsafe class PdhCpuSource : ICpuSource
 {
@@ -60,6 +62,7 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
         public int ProcessorAt(int position) => _processor[position];
     }
 
+    /// <summary>0 when the counters couldn't be added.</summary>
     readonly nint _query;
     readonly nint _utility, _privileged, _performance;
     readonly InstanceMap _utilityMap = new(), _privilegedMap = new();
@@ -72,13 +75,18 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
         Info = ReadInfo();
 
         if (Pdh.PdhOpenQueryW(null, 0, out _query) != Pdh.ErrorSuccess)
-            throw new InvalidOperationException("PdhOpenQueryW failed.");
+        {
+            _query = 0;
+            Debug.WriteLine("PdhCpuSource: PdhOpenQueryW failed; the CPU reads nothing.");
+            return;
+        }
         if (Pdh.PdhAddEnglishCounterW(_query, UtilityPath, 0, out _utility) != Pdh.ErrorSuccess
             || Pdh.PdhAddEnglishCounterW(_query, PrivilegedPath, 0, out _privileged) != Pdh.ErrorSuccess
             || Pdh.PdhAddEnglishCounterW(_query, PerformancePath, 0, out _performance) != Pdh.ErrorSuccess)
         {
             Pdh.PdhCloseQuery(_query);
-            throw new InvalidOperationException("PdhAddEnglishCounterW failed.");
+            _query = 0;
+            Debug.WriteLine(@"PdhCpuSource: no \Processor Information counters; the CPU reads nothing.");
         }
     }
 
@@ -87,7 +95,7 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
     public bool Read(Span<CpuLoad> perProcessor, out double totalUtility, out double performancePercent)
     {
         totalUtility = performancePercent = 0;
-        if (_disposed || Pdh.PdhCollectQueryData(_query) != Pdh.ErrorSuccess) return false;
+        if (_disposed || _query == 0 || Pdh.PdhCollectQueryData(_query) != Pdh.ErrorSuccess) return false;
 
         // A rate needs two collects, so the first read has nothing to report yet.
         if (!_collected)
@@ -142,7 +150,7 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
     {
         if (_disposed) return;
         _disposed = true;
-        Pdh.PdhCloseQuery(_query);
+        if (_query != 0) Pdh.PdhCloseQuery(_query);
         _utilityBuffer.Dispose();
         _privilegedBuffer.Dispose();
     }

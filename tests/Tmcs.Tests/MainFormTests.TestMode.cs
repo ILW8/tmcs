@@ -197,7 +197,7 @@ public sealed partial class MainFormTests
         Directory.CreateDirectory(Path.GetDirectoryName(DiagPath)!);
         File.WriteAllText(DiagPath, DiagLog.Header + "\n"); // passes the path check; only opening it fails
         var icons = new FakeIconLoader();
-        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, icons.CreateGeneric(), new FakeTimer(), new SettingsStore(SettingsPath), TestMode());
+        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, icons.CreateGeneric(), new FakeTimer(), new SettingsStore(SettingsPath), TestMode(), FakeDeviceSources.Create());
         var stderr = new StringWriter();
         MainForm? form;
         int exitCode;
