@@ -121,6 +121,7 @@ Sidebar, as in Task Manager: an entry with a live mini graph and summary text fo
 Right-hand pane. Graphs plus the numbers below them, 1:1 with Task Manager. Graphs cover 60 seconds of history in fixed-size buffers.
 - **CPU**:
   - **One graph per logical processor**: 32 graphs in Task Manager's grid layout. This is fixed, not switchable.
+  - Each graph also draws kernel time, as Task Manager does with "Show kernel times" on: a second, fainter line over a darker fill. Always on, with no menu to turn it off (owner, 2026-10-24).
   - Numbers: Utilization, Speed, Processes, Threads, Handles, Up time, Base speed, Sockets, Cores, Logical processors, Virtualization, and L1/L2/L3 cache.
 - **Memory**:
   - Memory usage graph and the Memory composition bar.
@@ -133,7 +134,8 @@ Right-hand pane. Graphs plus the numbers below them, 1:1 with Task Manager. Grap
   - Numbers: Send, Receive, Adapter name, DNS name, Connection type, IPv4 address, IPv6 address. For Wi-Fi: SSID, Signal strength.
 - **GPU 0**:
   - Four engine graphs (3D, Copy, Video Encode, Video Decode), Dedicated GPU memory usage graph, Shared GPU memory usage graph.
-  - Numbers: Utilization, Dedicated GPU memory, Shared GPU memory, GPU Memory, Driver version, Driver date, DirectX version, Physical location, Hardware reserved memory.
+  - Numbers: Utilization, Dedicated GPU memory, Shared GPU memory, GPU Memory, GPU Temperature, Driver version, Driver date, DirectX version, Physical location, Hardware reserved memory.
+  - The temperature also shows in the GPU 0 sidebar entry, for example "(42 °C)", as in Task Manager (owner, 2026-10-24).
 - Out: the pane's right-click menu (Change graph to, Show kernel times, Graph summary view, View, View network details, Copy), and the "Open Resource Monitor" link.
 
 ## 5. Engineering constraints (non-negotiable)
@@ -174,7 +176,7 @@ This is guidance; the builder chooses.
 - **User name**: `OpenProcessToken` → `TokenUser` → `LookupAccountSid`, cached per SID. Task Manager shows the short account name (SYSTEM, LOCAL SERVICE, DWM-1, the owner's user name).
 - **UAC virtualization**: `TokenVirtualizationAllowed` and `TokenVirtualizationEnabled`.
 - **Status "Not responding"**: top-level windows checked with `IsHungAppWindow`, only while the Details tab is showing.
-- **Per-logical-processor CPU**: `SystemProcessorPerformanceInformation` or PDH `Processor Information`. Task Manager is believed to use frequency-scaled "% Processor Utility" on the Performance tab but processor time in Details. Verify which one each view uses, and match the stock Task Manager side by side.
+- **Per-logical-processor CPU**: `SystemProcessorPerformanceInformation` or PDH `Processor Information`. Verified on 2026-10-24 by logging Task Manager's Performance-tab Utilization beside the `Processor Information(_Total)` counters over 60 updates: it follows the frequency-scaled `% Processor Utility` (mean difference 0.53 points), not `% Processor Time` (2.34). The Details CPU column stays on processor time.
 - **Memory**: `GetPerformanceInfo`, `GlobalMemoryStatusEx`, `NtQuerySystemInformation` memory-list info for the composition bar. Speed, slots and form factor come from SMBIOS/WMI, read once at startup.
 - **Disk**: `IOCTL_DISK_PERFORMANCE` per physical drive, or PDH PhysicalDisk. Static info comes from `IOCTL_STORAGE_QUERY_PROPERTY` and volume mapping.
 - **Network**: `GetIfTable2`/`GetIfEntry2` octet counters, plus `GetAdaptersAddresses` for names and IPs.
@@ -197,6 +199,7 @@ The owner does not allow computer use (screen or mouse control). Get Task Manage
   - Ask the owner for screenshots, which they take when convenient.
   - With the owner's OK at the time, run one elevated helper (one UAC prompt) that reads Task Manager through UI Automation and captures its window with `PrintWindow`. It must never move the mouse, send keystrokes or take focus.
   - UI Automation also exposes the Details grid's cell text, which lets the builder compare tmcs's numbers against Task Manager's.
+- **Performance tab captures (2026-10-24)**: `tools/capture-taskmgr.ps1`, run elevated with the owner's OK, saved an image and an element dump with bounds for every Performance pane of the owner's Task Manager (CPU, Memory, Disks 0–4, 12 network adapters, GPU 0) into `artifacts/reference/taskmgr/`. That folder is git-ignored: the images are Microsoft's UI and are never committed. It drives Task Manager through MSAA, because the managed UI Automation client sees only window-level panes.
 - These are references only. Recreate the layout, text and behavior. Don't embed Microsoft binaries, icons, bitmaps or markup in tmcs.
 
 ## 8. Build, packaging, signing
