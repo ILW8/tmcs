@@ -6,6 +6,9 @@ internal static unsafe partial class NtDll
 {
     public const int SystemProcessInformation = 5;
 
+    /// <summary><c>SystemTimeOfDayInformation</c>: a 48-byte block whose first two longs are <c>BootTime</c> and <c>CurrentTime</c> (100 ns, FILETIME epoch).</summary>
+    public const int SystemTimeOfDayInformation = 3;
+
     /// <summary><c>ProcessCommandLineInformation</c>: a <see cref="UnicodeString"/> followed by its characters, in one block.</summary>
     public const int ProcessCommandLineInformation = 60;
 

@@ -12,6 +12,12 @@ internal static unsafe partial class Kernel32
     /// <summary><c>ALL_PROCESSOR_GROUPS</c>: <see cref="GetActiveProcessorCount"/> counts the processors of every group.</summary>
     public const ushort AllProcessorGroups = 0xFFFF;
 
+    /// <summary><c>RelationAll</c>: <see cref="GetLogicalProcessorInformationEx"/> returns every relationship.</summary>
+    public const int RelationAll = 0xFFFF;
+
+    /// <summary><c>PF_VIRT_FIRMWARE_ENABLED</c>: virtualization is enabled in the firmware.</summary>
+    public const uint PfVirtFirmwareEnabled = 21;
+
     /// <returns>The process handle, or 0 on failure. The caller must <see cref="CloseHandle"/> it.</returns>
     [LibraryImport("kernel32.dll", SetLastError = true)]
     public static partial nint OpenProcess(uint desiredAccess, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, int processId);
@@ -40,4 +46,14 @@ internal static unsafe partial class Kernel32
     /// <returns>The number of active logical processors in the group, or 0 on failure.</returns>
     [LibraryImport("kernel32.dll", SetLastError = true)]
     public static partial uint GetActiveProcessorCount(ushort groupNumber);
+
+    /// <summary>Fills <paramref name="buffer"/> with variable-sized <c>SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX</c> records.</summary>
+    /// <param name="length">In: bytes in <paramref name="buffer"/>. Out: bytes needed or written. Fails with <see cref="ErrorInsufficientBuffer"/> when too small.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetLogicalProcessorInformationEx(int relationship, byte* buffer, ref uint length);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsProcessorFeaturePresent(uint feature);
 }
