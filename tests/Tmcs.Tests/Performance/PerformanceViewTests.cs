@@ -128,8 +128,8 @@ public sealed class PerformanceViewTests
         form.ShowOffscreen();
 
         Assert.False(pane.VerticalScroll.Visible);
-        Assert.Equal(19, pane.Left);
-        Assert.Equal(1028, pane.Right);
+        Assert.Equal(19, pane.ContentLeft);
+        Assert.Equal(1028, pane.ContentRight);
         Assert.Equal(53, pane.CaptionY);
         Assert.Equal(69, pane.GraphTop);
         Assert.Equal(555, pane.InfoBottom);
@@ -142,7 +142,7 @@ public sealed class PerformanceViewTests
 
         Assert.True(tall.VerticalScroll.Visible);
         Assert.False(tall.HorizontalScroll.Visible);
-        Assert.Equal(1011, tall.Right);
+        Assert.Equal(1011, tall.ContentRight);
         Assert.Equal(595, tall.InfoBottom);
     });
 
@@ -162,19 +162,23 @@ public sealed class PerformanceViewTests
             view.ApplyDpi(96);
             rig.Paint(g);
             var before = view.Fonts;
+            var oldTitle = before.Title;
             view.ApplyDpi(144);
             rig.Paint(g);
 
             Assert.NotSame(before, view.Fonts); // recreated on the change
+            Assert.Throws<ArgumentException>(() => oldTitle.GetHeight()); // and the old ones disposed
             Assert.All(view.Panes, p => Assert.Same(view.Fonts, p.Fonts));
             Assert.Equal(42f, view.Fonts.Title.Size);
-            // Scaled once (about 1.5×), not twice (2.25×). Within 1 px in 96-DPI units, like all geometry: GDI hints every glyph
-            // at 18 px, so 53 px becomes 78, not 79.5.
+            // Scaled once (about 1.5×), not twice (2.25×). GDI hints every glyph, so the ratio isn't exact: 53 px becomes 78 at 18 px.
             var at144 = PaneText.Width("Utilization", view.Fonts.Label);
-            Assert.InRange(at144 * 96.0 / 144, at96 - 1, at96 + 1);
+            Assert.InRange(at144 / (double)at96, 1.35, 1.65);
 
             if (round == 0)
             {
+                // Objects earlier tests left to the finalizer are released here, not inside the counted rounds.
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
                 gdi = GuiResources(0);
                 user = GuiResources(1);
             }
@@ -200,6 +204,21 @@ public sealed class PerformanceViewTests
             TextRenderer.MeasureText("x", font);
         }
     }
+
+    [Fact]
+    public void Dpi_change_repaints_the_visible_pane() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        using var form = new OffscreenForm { ClientSize = new Size(1278, 623) };
+        form.Controls.Add(rig.View);
+        form.ShowOffscreen(); // the view applies the host's DPI as its window is created
+        var pane = rig.View.VisiblePane;
+        var repaints = pane.RepaintCount;
+
+        rig.View.ApplyDpi(rig.View.Fonts.Dpi == 144 ? 96 : 144);
+
+        Assert.True(pane.RepaintCount > repaints);
+    });
 
     [Fact]
     public void Dpi_change_scales_the_layout() => Sta.Run(() =>

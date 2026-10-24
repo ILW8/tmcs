@@ -436,7 +436,8 @@ internal class MainForm : Form, IScenarioTarget
     /// <summary>
     /// The tab strip. <see cref="ShowPage"/> selects a page from code without moving the focus: selecting through
     /// <see cref="TabControl.SelectedTab"/> focuses the page's first control, and focusing a control of an inactive window
-    /// activates the window, which test mode's must never be.
+    /// activates the window, which test mode's must never be. It raises only SelectedIndexChanged, not Selecting, Selected or
+    /// Deselecting, which nothing here subscribes to.
     /// </summary>
     internal sealed class TabStrip : TabControl
     {

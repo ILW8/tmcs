@@ -11,6 +11,9 @@ internal sealed class GraphPainter : IDisposable
     /// <summary>Narrower or shorter than this, a graph has no interior and is not painted.</summary>
     const int MinSide = 3;
 
+    /// <summary>The side of the bounds GDI+ reports for an infinite clip (2^23), whatever translation applies.</summary>
+    const float InfiniteClipSide = 8388608f;
+
     readonly SolidBrush _border, _topCorner, _bottomCorner, _grid, _fill, _gridInFill, _secondFill, _gridInSecondFill;
     readonly Pen _line, _secondLine;
     readonly GraphicsPath _clip = new();
@@ -43,7 +46,7 @@ internal sealed class GraphPainter : IDisposable
     /// is the series drawn in the palette's second style, or -1.
     /// <para>
     /// <see cref="Graphics.Save"/> allocates on every call, so the clip and the modes this changes are put back by hand. The
-    /// caller's clip comes back as its bounding rectangle.
+    /// caller's clip comes back as its bounding rectangle, or as infinite when it was.
     /// </para>
     /// </summary>
     public void Paint(Graphics g, Rectangle bounds, History history, int series, float max, int gridSamples, int second = -1)
@@ -55,9 +58,10 @@ internal sealed class GraphPainter : IDisposable
         var pixelOffset = g.PixelOffsetMode;
         try
         {
-            g.IntersectClip(new Rectangle(left + 1, top + 1, bounds.Width - 2, bounds.Height - 2));
+            // The pixel offset mode moves a clip set in world coordinates, so it is set first, and put back before the clip.
             g.SmoothingMode = SmoothingMode.None;
             g.PixelOffsetMode = PixelOffsetMode.Default;
+            g.IntersectClip(new Rectangle(left + 1, top + 1, bounds.Width - 2, bounds.Height - 2));
             g.FillRectangle(Brushes.White, left, top, bounds.Width, bounds.Height);
             DrawGrid(g, _grid, history, left, right, top, bottom, gridSamples);
 
@@ -83,9 +87,11 @@ internal sealed class GraphPainter : IDisposable
         }
         finally
         {
-            g.SetClip(clip);
             g.SmoothingMode = smoothing;
             g.PixelOffsetMode = pixelOffset;
+            // An infinite clip reports GDI+'s 2^23 rectangle as its bounds; it is put back as infinite, not as that rectangle.
+            if (clip.Width >= InfiniteClipSide && clip.Height >= InfiniteClipSide) g.ResetClip();
+            else g.SetClip(clip);
         }
 
         DrawBorder(g, left, right, top, bottom);

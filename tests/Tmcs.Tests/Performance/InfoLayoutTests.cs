@@ -125,6 +125,13 @@ public class InfoLayoutTests
     }
 
     [Fact]
+    public void Empty_block_has_no_height()
+    {
+        Assert.Equal(0, InfoLayout.Rows([], [], _ => 0, _ => 0).Height);
+        Assert.Equal(0, InfoLayout.Columns([], [], _ => 0, _ => 0).Height);
+    }
+
+    [Fact]
     public void Min_marked_width_leaves_unmarked_items_alone()
     {
         var layout = InfoLayout.Rows(Lines([new InfoItem("Utilization", "14%")]), [], Widths(("Utilization", 53)), Widths(("14%", 38)), minMarkedWidth: 86);

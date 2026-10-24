@@ -1,4 +1,4 @@
-using System.Drawing;
+using System.Drawing.Drawing2D;
 using Tmcs.Native;
 using Tmcs.Performance;
 using Tmcs.Performance.Graphs;
@@ -10,10 +10,10 @@ public class GraphPainterTests
     static History Steady(float total, float kernel)
     { var h = new History(2); for (var i = 0; i < 60; i++) h.Add((i + 1) * 10_000_000L, [total, kernel]); return h; }
 
-    static int[,] Paint(History h, int gridSamples = 10, int second = 1)
-    { using var bmp = new Bitmap(122, 76); using var g = Graphics.FromImage(bmp);
-      using var p = new GraphPainter(GraphPalettes.Cpu); p.Paint(g, new Rectangle(0, 0, 122, 76), h, 0, 100, gridSamples, second);
-      var px = new int[122, 76]; for (var x = 0; x < 122; x++) for (var y = 0; y < 76; y++) px[x, y] = bmp.GetPixel(x, y).ToArgb() & 0xFFFFFF;
+    static int[,] Paint(History h, int gridSamples = 10, int second = 1, int width = 122)
+    { using var bmp = new Bitmap(width, 76); using var g = Graphics.FromImage(bmp);
+      using var p = new GraphPainter(GraphPalettes.Cpu); p.Paint(g, new Rectangle(0, 0, width, 76), h, 0, 100, gridSamples, second);
+      var px = new int[width, 76]; for (var x = 0; x < width; x++) for (var y = 0; y < 76; y++) px[x, y] = bmp.GetPixel(x, y).ToArgb() & 0xFFFFFF;
       return px; }
 
     static uint GuiResources(uint flags) => User32.GetGuiResources(Kernel32.GetCurrentProcess(), flags);
@@ -67,8 +67,32 @@ public class GraphPainterTests
           p.Paint(g, bounds, h, 0, 100, 10, 1);
       for (var x = 0; x < 122; x++) for (var y = 0; y < 76; y++) Assert.Equal(0xFFFFFF, bmp.GetPixel(x, y).ToArgb() & 0xFFFFFF); }
 
+    // NaN is 0, not max and not a skipped point.
     [Fact] public void Nan_values_paint_as_zero()
     { var h = Steady(50, 0); h.Add(61 * 10_000_000L, [float.NaN, float.NaN]); // the newest point drops to 0
       var px = Paint(h);
-      Assert.Equal(0xF1F6FA, px[50, 70]); Assert.Equal(0xFFFFFF, px[50, 20]); } // the half-load fill is still drawn
+      Assert.Equal(0xF1F6FA, px[50, 70]); Assert.Equal(0xFFFFFF, px[50, 20]); // the half-load fill is still drawn
+      // 600 wide, so the last segment spans 10 px: it falls from (588.8, 37.5) to the bottom at x 599, crossing x 594 at
+      // y 56.5, and both probes are over 2 px from it.
+      var wide = Paint(h, second: -1, width: 600);
+      Assert.Equal(0xF1F6FA, wide[594, 70]); // filled below it: a skipped point would end the fill at x 588.8
+      Assert.Equal(0xFFFFFF, wide[594, 48]); // white above it: a NaN taken as max would rise to the top
+      var nan = new History(2); for (var i = 0; i < 60; i++) nan.Add((i + 1) * 10_000_000L, [float.NaN, float.NaN]);
+      var all = Paint(nan); // white apart from the grid
+      Assert.Equal(0xFFFFFF, all[50, 20]); Assert.Equal(0xFFFFFF, all[50, 70]); Assert.Equal(0xD9EAF4, all[50, 68]); }
+
+    [Fact] public void Paint_puts_back_the_callers_clip_modes_and_transform()
+    { using var bmp = new Bitmap(200, 120); using var g = Graphics.FromImage(bmp);
+      using var p = new GraphPainter(GraphPalettes.Cpu); var h = Steady(70, 20);
+      g.SmoothingMode = SmoothingMode.AntiAlias; g.PixelOffsetMode = PixelOffsetMode.Half;
+      g.TranslateTransform(7, 5); g.SetClip(new Rectangle(3, 2, 150, 100));
+      var clip = g.ClipBounds; var transform = g.TransformElements;
+      p.Paint(g, new Rectangle(10, 10, 122, 76), h, 0, 100, 10, 1);
+      Assert.Equal(clip, g.ClipBounds); Assert.Equal(transform, g.TransformElements);
+      Assert.Equal(SmoothingMode.AntiAlias, g.SmoothingMode); Assert.Equal(PixelOffsetMode.Half, g.PixelOffsetMode);
+
+      g.ResetClip(); // infinite comes back infinite, not as a huge rectangle
+      p.Paint(g, new Rectangle(10, 10, 122, 76), h, 0, 100, 10, 1);
+      using var region = g.Clip;
+      Assert.True(region.IsInfinite(g)); }
 }

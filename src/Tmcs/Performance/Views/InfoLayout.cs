@@ -47,7 +47,7 @@ internal sealed class InfoLayout
         }
 
         Table = placed;
-        Height = Math.Max(lines * Pitch - LastRowTrim, y);
+        Height = Math.Max(0, Math.Max(lines * Pitch - LastRowTrim, y)); // no rows and no table: 0, not −8
     }
 
     public int Height { get; }

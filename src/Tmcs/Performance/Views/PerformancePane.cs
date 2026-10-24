@@ -66,14 +66,11 @@ internal abstract class PerformancePane : ScrollableControl
         }
     }
 
-    // The pane's content edges. They hide the control's own Left and Right, which a pane never needs: the view places it by
-    // its Bounds.
-
-    /// <summary>Graphs and the info block start here.</summary>
-    public new int Left => _fonts.Scale(19);
+    /// <summary>The content's left edge: graphs and the info block start here.</summary>
+    public int ContentLeft => _fonts.Scale(19);
 
     /// <summary>The content's right edge, exclusive. A scrollbar narrows the client area and so moves it, as in Task Manager.</summary>
-    public new int Right => ClientSize.Width - _fonts.Scale(24);
+    public int ContentRight => ClientSize.Width - _fonts.Scale(24);
 
     /// <summary>The top captions' y.</summary>
     public int CaptionY => _fonts.Scale(53);
@@ -104,7 +101,7 @@ internal abstract class PerformancePane : ScrollableControl
             {
                 PaneText.Draw(g, device.PaneTitle, _fonts.Title, new Point(_fonts.Scale(17), _fonts.Scale(10)), PaneText.Black);
                 var subtitle = device.Subtitle;
-                var x = Right - PaneText.Width(subtitle, _fonts.Subtitle);
+                var x = ContentRight - PaneText.Width(subtitle, _fonts.Subtitle);
                 PaneText.Draw(g, subtitle, _fonts.Subtitle, new Point(x, _fonts.Scale(24)), PaneText.Black);
             }
 
@@ -138,14 +135,14 @@ internal abstract class PerformancePane : ScrollableControl
     }
 
     /// <summary>
-    /// The info block at (<see cref="Left"/>, <see cref="InfoTop"/>): labels in the Label font and gray, values 15 px below in
+    /// The info block at (<see cref="ContentLeft"/>, <see cref="InfoTop"/>): labels in the Label font and gray, values 15 px below in
     /// the Value font and black, the legend markers in <paramref name="solid"/> and <paramref name="dashed"/>, and the table's
     /// keys (gray) and values (black) in the Label font.
     /// </summary>
     protected void PaintInfo(Graphics g, InfoLayout layout, Color solid, Color dashed)
     {
         var f = _fonts;
-        var left = Left;
+        var left = ContentLeft;
         var top = InfoTop(layout);
         foreach (var placed in layout.Items)
         {
