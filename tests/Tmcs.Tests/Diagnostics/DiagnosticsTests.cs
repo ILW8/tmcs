@@ -149,19 +149,146 @@ public sealed class DiagnosticsTests : IDisposable
     public void Bad_scenario_is_refused_with_its_message_beside_the_csv()
     {
         var csv = Path.Combine(_dir, "soak", "run.csv"); // its directory does not exist yet
+        var stderr = new StringWriter();
 
-        Assert.False(Program.CheckScenario(new LaunchOptions(csv, "details:10,bogus:1")));
+        Assert.Equal(Program.BadScenarioExitCode, Program.CheckTestMode(new LaunchOptions(csv, "details:10,bogus:1"), stderr));
 
         Assert.Equal(2, Program.BadScenarioExitCode);
         Assert.Contains("bogus", File.ReadAllText(csv + ".error.txt"));
+        Assert.Contains("bogus", stderr.ToString());
         Assert.False(File.Exists(csv)); // no log was started
 
         var good = Path.Combine(_dir, "good.csv");
-        Assert.True(Program.CheckScenario(new LaunchOptions(good, "details:10,paused:0.5")));
-        Assert.True(Program.CheckScenario(new LaunchOptions(good, null))); // test mode without a scenario
-        Assert.True(Program.CheckScenario(new LaunchOptions(null, "bogus:1"))); // not test mode: the scenario is ignored
+        Assert.Equal(0, Program.CheckTestMode(new LaunchOptions(good, "details:10,paused:0.5"), stderr));
+        Assert.Equal(0, Program.CheckTestMode(new LaunchOptions(good, null), stderr)); // test mode without a scenario
+        Assert.Equal(0, Program.CheckTestMode(new LaunchOptions(null, "bogus:1"), stderr)); // not test mode: the scenario is ignored
         Assert.False(File.Exists(good + ".error.txt"));
     }
+
+    [Theory]
+    [InlineData("run.txt")]
+    [InlineData("run.csv.bak")]
+    [InlineData("run")]
+    public void Diag_path_not_ending_in_csv_is_refused_and_nothing_is_written(string name)
+    {
+        var path = Path.Combine(_dir, "soak", name); // its directory does not exist
+        var stderr = new StringWriter();
+
+        // The scenario does not parse either: the path is checked first, so not even the scenario's error file is written.
+        Assert.Equal(Program.DiagPathRefusedExitCode, Program.CheckTestMode(new LaunchOptions(path, "bogus:1"), stderr));
+
+        Assert.Equal(3, Program.DiagPathRefusedExitCode);
+        Assert.Contains(".csv", stderr.ToString());
+        Assert.False(Directory.Exists(_dir)); // nothing on disk at all
+    }
+
+    [Theory]
+    [InlineData("name,size\nreport.docx,12\n")]
+    [InlineData("")] // no first line at all
+    [InlineData(DiagLog.Header + ",extra\n")]
+    [InlineData("#" + DiagLog.Header + "\n")]
+    public void Existing_file_that_is_not_a_diag_csv_is_refused_and_left_alone(string content)
+    {
+        Directory.CreateDirectory(_dir);
+        var path = Path.Combine(_dir, "other.csv");
+        File.WriteAllText(path, content);
+        var stderr = new StringWriter();
+
+        Assert.Equal(Program.DiagPathRefusedExitCode, Program.CheckTestMode(new LaunchOptions(path, null), stderr));
+
+        Assert.Contains(path, stderr.ToString());
+        Assert.Equal(content, File.ReadAllText(path));
+        Assert.Equal([path], Directory.GetFiles(_dir)); // no error file
+    }
+
+    [Theory]
+    [InlineData(DiagLog.Header + "\r\n2026-10-23T12:00:00.0000000Z,details,1,3,4,2,1,1,1048576,524288,300,40,20,12.5,3.25\r\n")]
+    [InlineData(DiagLog.Header + "\n")]
+    [InlineData(DiagLog.Header)]
+    public void Existing_diag_csv_is_replaced(string content)
+    {
+        Directory.CreateDirectory(_dir);
+        var path = Path.Combine(_dir, "old.csv");
+        File.WriteAllText(path, content);
+        var stderr = new StringWriter();
+
+        Assert.Equal(0, Program.CheckTestMode(new LaunchOptions(path, null), stderr));
+        using (new DiagLog(path, NoProbe, new FakeTimer()))
+        {
+        }
+
+        Assert.Equal("", stderr.ToString());
+        Assert.Equal([DiagLog.Header], File.ReadAllLines(path));
+    }
+
+    [Fact]
+    public void New_diag_csv_is_allowed_in_any_case_and_checking_it_writes_nothing()
+    {
+        var path = Path.Combine(_dir, "new", "run.CSV"); // its directory does not exist yet
+        var stderr = new StringWriter();
+
+        Assert.Equal(0, Program.CheckTestMode(new LaunchOptions(path, "details:1"), stderr));
+
+        Assert.Equal("", stderr.ToString());
+        Assert.False(Directory.Exists(_dir));
+    }
+
+    [Fact]
+    public void Diag_log_does_not_empty_a_file_that_is_not_a_diag_csv()
+    {
+        // Program refuses such a path before any window exists. The log checks the open file again, in case one was swapped in.
+        Directory.CreateDirectory(_dir);
+        var path = Path.Combine(_dir, "other.csv");
+        File.WriteAllText(path, "keep,me\n");
+        var timer = new FakeTimer();
+
+        Assert.Throws<IOException>(() => new DiagLog(path, NoProbe, timer));
+
+        Assert.Equal("keep,me\n", File.ReadAllText(path));
+        Assert.False(timer.Enabled);
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) // the log closed the file
+        {
+        }
+    }
+
+    [Fact]
+    public void Locked_diag_csv_is_reported_on_stderr_and_beside_it_with_its_own_exit_code()
+    {
+        Directory.CreateDirectory(_dir);
+        var path = Path.Combine(_dir, "run.csv");
+        File.WriteAllText(path, DiagLog.Header + "\n");
+        var stderr = new StringWriter();
+
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) // another process has it locked
+        {
+            Assert.Equal(Program.DiagLogFailedExitCode, Program.CheckTestMode(new LaunchOptions(path, null), stderr));
+        }
+
+        Assert.Equal(4, Program.DiagLogFailedExitCode);
+        var message = stderr.ToString();
+        Assert.Contains("diagnostics log", message);
+        Assert.Equal(message, File.ReadAllText(path + ".error.txt"));
+        Assert.Equal([DiagLog.Header], File.ReadAllLines(path));
+    }
+
+    [Fact]
+    public void Test_run_failure_is_reported_without_a_dialog_and_normal_mode_keeps_the_dialog()
+    {
+        var csv = Path.Combine(_dir, "soak", "run.csv");
+        var stderr = new StringWriter();
+
+        Assert.Equal(Program.RunFailedExitCode, Program.TestRunFailure(new LaunchOptions(csv, null), new InvalidOperationException("tick broke"), stderr));
+
+        Assert.Equal(5, Program.RunFailedExitCode);
+        Assert.Contains("tick broke", stderr.ToString());
+        Assert.Equal(stderr.ToString(), File.ReadAllText(csv + ".error.txt"));
+
+        var normal = new StringWriter();
+        Assert.Null(Program.TestRunFailure(new LaunchOptions(null, null), new InvalidOperationException("tick broke"), normal)); // the dialog's case
+        Assert.Equal("", normal.ToString());
+    }
+
+    private static DiagSnapshot NoProbe() => throw new InvalidOperationException("no tick was expected");
 
     private static T WithCulture<T>(string name, Func<T> body)
     {

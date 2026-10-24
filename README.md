@@ -39,7 +39,7 @@ The soak checks that tmcs does not leak while processes start and exit continuou
 
 Test mode is switched on by environment variables, not command-line flags (tmcs ignores its arguments):
 
-- `TMCS_DIAG` is the path of the CSV to write. Setting it turns test mode on.
+- `TMCS_DIAG` is the path of the CSV to write, and must end in `.csv`. Setting it turns test mode on.
 - `TMCS_SCENARIO` is optional and is read only in test mode. It is a list of `action:minutes` steps separated by commas, for example `details:10,minimized:30,details:3,paused:5,details:2`. The actions are `details` (restored, Details tab, sampling), `minimized` (minimized, sampling) and `paused` (restored, paused). Minutes may be fractional.
 
 Set them for the tmcs process only. tmcs removes both from its own environment when it starts, so the processes it starts do not inherit them.
@@ -50,10 +50,18 @@ In test mode tmcs:
 - shows its window without activating it and keeps it at the bottom of the z-order, so it never takes focus or rises above your windows;
 - starts at Normal speed, not on top and not maximized, whatever the settings file says;
 - reads the settings file but never saves it;
-- writes one CSV row every 10 seconds (private bytes, handles, GDI and USER objects, icon and row counts, CPU time, samples taken, and how long the last scenario step took to apply), replacing any file already at that path;
+- writes one CSV row every 10 seconds (private bytes, handles, GDI and USER objects, icon and row counts, CPU time, samples taken, and how long the last scenario step took to apply), replacing a CSV that tmcs wrote before at that path (it refuses any other file already there, see below);
 - plays the scenario, if there is one, and exits with code 0 when it ends. Without a scenario it logs until you close the window.
 
-A scenario that does not parse is reported before any window appears: tmcs writes the parser's message to `<TMCS_DIAG>.error.txt` and exits with code 2.
+Nobody watches a test run, so test mode never shows an error dialog. It writes the error to stderr and, except for code 3, to `<TMCS_DIAG>.error.txt` when that file can be written. The exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | The scenario ended, or you closed the window. |
+| 2 | `TMCS_SCENARIO` does not parse. Reported before any window appears. |
+| 3 | `TMCS_DIAG` is refused, before any window appears: it does not end in `.csv`, or it names an existing file whose first line is not the diagnostics header. tmcs writes nothing at all, not even the error file. |
+| 4 | The CSV cannot be read, created or written, for example because another program has it open or the folder is read-only. |
+| 5 | An unhandled exception, for example in a timer tick, ended the run. |
 
 ### Non-elevated soak (Debug build)
 

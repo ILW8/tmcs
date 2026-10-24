@@ -192,6 +192,41 @@ public sealed partial class MainFormTests
     });
 
     [Fact]
+    public void Test_mode_reports_a_diag_csv_it_cannot_open_and_shows_no_window() => Sta.Run(() =>
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(DiagPath)!);
+        File.WriteAllText(DiagPath, DiagLog.Header + "\n"); // passes the path check; only opening it fails
+        var icons = new FakeIconLoader();
+        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, icons.CreateGeneric(), new FakeTimer(), new SettingsStore(SettingsPath), TestMode());
+        var stderr = new StringWriter();
+        MainForm? form;
+        int exitCode;
+
+        using (new FileStream(DiagPath, FileMode.Open, FileAccess.Read, FileShare.Read)) // a reader that does not allow writing
+            form = Program.CreateMainForm(services.Options, () => new OffscreenMainForm(services), stderr, out exitCode);
+
+        Assert.Null(form);
+        Assert.Equal(Program.DiagLogFailedExitCode, exitCode);
+        var message = stderr.ToString();
+        Assert.Contains("diagnostics log", message);
+        Assert.Equal(message, File.ReadAllText(DiagPath + ".error.txt"));
+        Assert.Equal([DiagLog.Header], File.ReadAllLines(DiagPath));
+        Assert.Equal(0, icons.Outstanding);
+    });
+
+    [Fact]
+    public void Only_test_mode_turns_a_form_constructor_io_error_into_an_exit_code()
+    {
+        var stderr = new StringWriter();
+
+        Assert.Throws<IOException>(() => Program.CreateMainForm(new LaunchOptions(null, null), () => throw new IOException("disk"), stderr, out _));
+        Assert.Throws<InvalidOperationException>(() => Program.CreateMainForm(TestMode(), () => throw new InvalidOperationException("bug"), stderr, out _));
+
+        Assert.Equal("", stderr.ToString());
+        Assert.False(Directory.Exists(_dir));
+    }
+
+    [Fact]
     public void Test_mode_scenario_runs_to_the_end_then_closes_the_form_and_the_log() => Sta.Run(() =>
     {
         using var rig = new Rig(SettingsPath, TestMode("paused:0.001,details:0.001")); // 60 ms each

@@ -9,18 +9,34 @@ static class Program
 {
     private const string SingleInstanceMutex = @"Local\tmcs.single-instance";
 
+    // Test mode's exit codes. Nobody watches a test run, so its failures show no dialog: each is reported on stderr and, unless
+    // the TMCS_DIAG path itself was refused, in DiagPath + ".error.txt" (see ReportTestFailure).
+
     /// <summary>The exit code of a test run whose scenario does not parse.</summary>
     internal const int BadScenarioExitCode = 2;
 
+    /// <summary>The exit code of a test run whose <c>TMCS_DIAG</c> path is refused (<see cref="DiagLog.Refusal"/>). Nothing is written to disk.</summary>
+    internal const int DiagPathRefusedExitCode = 3;
+
+    /// <summary>The exit code of a test run whose diagnostics CSV cannot be read, created or written, for example because it is locked.</summary>
+    internal const int DiagLogFailedExitCode = 4;
+
+    /// <summary>The exit code of a test run that ends on an unhandled exception, such as a timer tick's.</summary>
+    internal const int RunFailedExitCode = 5;
+
     /// <summary>True while the error dialog is up. Another exception meanwhile, such as the next timer tick's, is dropped rather than stacking a second dialog.</summary>
     private static bool _showingError;
+
+    /// <summary>Set by a test run's first unhandled exception, which ends the run: what <see cref="Main"/> returns. 0 otherwise.</summary>
+    private static int _runExitCode;
 
     [STAThread]
     static int Main()
     {
         // Read first: test mode skips the single-instance check.
         var options = LaunchOptions.FromProcessEnvironment();
-        if (!CheckScenario(options)) return BadScenarioExitCode;
+        var refused = CheckTestMode(options, Console.Error);
+        if (refused != 0) return refused;
 
         using var instance = options.IsTestMode ? null : ClaimSingleInstance(); // held until tmcs exits
         if (!options.IsTestMode && instance is null)
@@ -30,40 +46,100 @@ static class Program
         }
 
         ApplicationConfiguration.Initialize();
-        Application.ThreadException += OnThreadException;
+        Application.ThreadException += (_, e) => OnThreadException(options, e.Exception);
         ProcessInfoSource.TryEnableDebugPrivilege(); // only succeeds when elevated
-        Application.Run(new MainForm(AppServices.CreateReal(options)));
-        return 0;
+        var form = CreateMainForm(options, () => new MainForm(AppServices.CreateReal(options)), Console.Error, out var failed);
+        if (form is null) return failed;
+        Application.Run(form);
+        return _runExitCode;
     }
 
     /// <summary>
-    /// Checks test mode's scenario before any window exists. A run nobody watches gets no dialog: a spec that does not parse
-    /// leaves the parser's message in <c>DiagPath + ".error.txt"</c>, and tmcs exits with <see cref="BadScenarioExitCode"/>.
-    /// Outside test mode the scenario is ignored.
+    /// Test mode's checks before any window exists: the <c>TMCS_DIAG</c> path (<see cref="DiagLog.Refusal"/>), then the scenario.
+    /// A refused path is reported on stderr only, so nothing at all is written to disk. A file at the path that cannot be read,
+    /// or a scenario that does not parse, is reported by <see cref="ReportTestFailure"/>. Outside test mode nothing is checked,
+    /// and the scenario is ignored.
     /// </summary>
-    /// <returns>False when tmcs must exit with <see cref="BadScenarioExitCode"/>.</returns>
-    internal static bool CheckScenario(LaunchOptions options)
+    /// <returns>0 to go on, or the exit code tmcs must exit with.</returns>
+    internal static int CheckTestMode(LaunchOptions options, TextWriter stderr)
     {
-        if (options is not { IsTestMode: true, Scenario: { } spec }) return true;
+        if (options.DiagPath is not { } path) return 0;
+        try
+        {
+            if (DiagLog.Refusal(path) is { } refusal)
+            {
+                stderr.WriteLine(refusal);
+                return DiagPathRefusedExitCode;
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            ReportTestFailure(path, $"tmcs could not read the diagnostics log: {e.Message}", stderr);
+            return DiagLogFailedExitCode;
+        }
+
+        if (options.Scenario is not { } spec) return 0;
         try
         {
             ScenarioParser.Parse(spec);
-            return true;
+            return 0;
         }
         catch (FormatException e)
         {
-            var errorPath = options.DiagPath + ".error.txt";
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(errorPath))!);
-                File.WriteAllText(errorPath, e.Message + Environment.NewLine);
-            }
-            catch (Exception io) when (io is IOException or UnauthorizedAccessException)
-            {
-                Debug.WriteLine(io); // the exit code still reports the bad scenario
-            }
+            ReportTestFailure(path, e.Message, stderr);
+            return BadScenarioExitCode;
+        }
+    }
 
-            return false;
+    /// <summary>
+    /// Creates the main window with <paramref name="create"/>. In test mode its constructor opens the diagnostics CSV, and a CSV
+    /// that cannot be created or written ends the run before any window shows: it is reported by <see cref="ReportTestFailure"/>,
+    /// and the result is null with <see cref="DiagLogFailedExitCode"/>. Outside test mode every exception propagates.
+    /// </summary>
+    internal static MainForm? CreateMainForm(LaunchOptions options, Func<MainForm> create, TextWriter stderr, out int exitCode)
+    {
+        exitCode = 0;
+        try
+        {
+            return create();
+        }
+        catch (Exception e) when (options.DiagPath is { } path && e is IOException or UnauthorizedAccessException)
+        {
+            ReportTestFailure(path, $"tmcs could not open the diagnostics log: {e.Message}", stderr);
+            exitCode = DiagLogFailedExitCode;
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Test mode's answer to an unhandled exception on the UI thread, such as a timer tick's: no dialog, since nobody watches the
+    /// run. The exception is reported by <see cref="ReportTestFailure"/>, and the run must end with <see cref="RunFailedExitCode"/>.
+    /// </summary>
+    /// <returns>The exit code to end the run with, or null outside test mode, where the error dialog is shown.</returns>
+    internal static int? TestRunFailure(LaunchOptions options, Exception e, TextWriter stderr)
+    {
+        if (options.DiagPath is not { } path) return null;
+        ReportTestFailure(path, $"tmcs stopped on an unhandled exception: {e}", stderr);
+        return RunFailedExitCode;
+    }
+
+    /// <summary>
+    /// Reports a test-mode failure on stderr and in <c><paramref name="diagPath"/> + ".error.txt"</c>, creating its directory if
+    /// needed. A path <see cref="DiagLog.Refusal"/> refuses never gets here. The error file is best effort: when it cannot be
+    /// written either, stderr and the exit code still report the failure.
+    /// </summary>
+    private static void ReportTestFailure(string diagPath, string message, TextWriter stderr)
+    {
+        stderr.WriteLine(message);
+        var errorPath = diagPath + ".error.txt";
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(errorPath))!);
+            File.WriteAllText(errorPath, message + Environment.NewLine);
+        }
+        catch (Exception io) when (io is IOException or UnauthorizedAccessException)
+        {
+            Debug.WriteLine(io);
         }
     }
 
@@ -116,13 +192,25 @@ static class Program
         }
     }
 
-    private static void OnThreadException(object sender, ThreadExceptionEventArgs e)
+    /// <summary>
+    /// Test mode reports the first exception and ends the run with its exit code (<see cref="TestRunFailure"/>); a later one,
+    /// before the message loop has ended, is dropped. Otherwise the error dialog lets the owner continue or quit.
+    /// </summary>
+    private static void OnThreadException(LaunchOptions options, Exception exception)
     {
+        if (_runExitCode != 0) return;
+        if (TestRunFailure(options, exception, Console.Error) is { } exitCode)
+        {
+            _runExitCode = exitCode;
+            Application.Exit();
+            return;
+        }
+
         if (_showingError) return;
         _showingError = true;
         try
         {
-            using var dialog = new ThreadExceptionDialog(e.Exception);
+            using var dialog = new ThreadExceptionDialog(exception);
             if (dialog.ShowDialog() == DialogResult.Abort) Application.Exit();
         }
         finally
