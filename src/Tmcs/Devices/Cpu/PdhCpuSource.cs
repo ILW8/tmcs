@@ -63,8 +63,7 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
     readonly nint _query;
     readonly nint _utility, _privileged, _performance;
     readonly InstanceMap _utilityMap = new(), _privilegedMap = new();
-    byte* _utilityBuffer, _privilegedBuffer;
-    uint _utilityCapacity, _privilegedCapacity;
+    readonly PdhArrayBuffer _utilityBuffer = new(), _privilegedBuffer = new();
     bool _collected;
     bool _disposed;
 
@@ -98,13 +97,13 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
             return true;
         }
 
-        if (!GetArray(_utility, ref _utilityBuffer, ref _utilityCapacity, out var utilityCount)) return false;
-        if (!GetArray(_privileged, ref _privilegedBuffer, ref _privilegedCapacity, out var privilegedCount)) return false;
+        if (!_utilityBuffer.ReadFormatted(_utility, Format, out var utilityCount)) return false;
+        if (!_privilegedBuffer.ReadFormatted(_privileged, Format, out var privilegedCount)) return false;
         if (Pdh.PdhGetFormattedCounterValue(_performance, Format, out _, out var perf) != Pdh.ErrorSuccess
             || !IsValid(perf.CStatus)) return false;
 
-        var utilityItems = (Pdh.CounterValueItem*)_utilityBuffer;
-        var privilegedItems = (Pdh.CounterValueItem*)_privilegedBuffer;
+        var utilityItems = (Pdh.CounterValueItem*)_utilityBuffer.Data;
+        var privilegedItems = (Pdh.CounterValueItem*)_privilegedBuffer.Data;
         if (!_utilityMap.Matches(utilityItems, utilityCount)) _utilityMap.Build(utilityItems, utilityCount);
         if (!_privilegedMap.Matches(privilegedItems, privilegedCount)) _privilegedMap.Build(privilegedItems, privilegedCount);
 
@@ -144,36 +143,13 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
         if (_disposed) return;
         _disposed = true;
         Pdh.PdhCloseQuery(_query);
-        NativeMemory.Free(_utilityBuffer);
-        NativeMemory.Free(_privilegedBuffer);
+        _utilityBuffer.Dispose();
+        _privilegedBuffer.Dispose();
     }
 
     static bool IsValid(uint status) => status is Pdh.CStatusValidData or Pdh.CStatusNewData;
 
     static double Clamp(double value) => double.IsNaN(value) ? 0 : Math.Clamp(value, 0, 100);
-
-    /// <summary>Reads the counter's array into <paramref name="buffer"/>, growing it when PDH asks. It never shrinks.</summary>
-    static bool GetArray(nint counter, ref byte* buffer, ref uint capacity, out int count)
-    {
-        count = 0;
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            var size = capacity;
-            var status = Pdh.PdhGetFormattedCounterArrayW(counter, Format, ref size, out var items, buffer);
-            if (status == Pdh.ErrorSuccess)
-            {
-                count = (int)items;
-                return true;
-            }
-            if (status != Pdh.MoreData) return false;
-
-            // Slack, in case an instance appears between the two calls.
-            var wanted = size + 1024;
-            buffer = (byte*)NativeMemory.Realloc(buffer, wanted);
-            capacity = wanted;
-        }
-        return false;
-    }
 
     static CpuInfo ReadInfo()
     {

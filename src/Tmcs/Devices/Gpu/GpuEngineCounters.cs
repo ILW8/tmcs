@@ -21,7 +21,10 @@ internal sealed class GpuEngineCounters
     Dictionary<(long Luid, int Node), double> _sums = [];
     Dictionary<(long Luid, int Node), double> _completed = [];
 
-    /// <summary>The instances the last completed sample held, to show the map follows the live ones.</summary>
+    /// <summary>
+    /// The instances the last completed sample held, to show the map follows the live ones. That is every instance PDH
+    /// reports, on any LUID (the Basic Render Driver's included), not only the listed GPUs'.
+    /// </summary>
     public int TrackedInstances => _previous.Count;
 
     /// <param name="instanceName">e.g. <c>pid_1234_luid_0x00000000_0x0001D8C7_phys_0_eng_0_engtype_3D</c>; anything else is skipped.</param>
@@ -46,8 +49,19 @@ internal sealed class GpuEngineCounters
     {
         (_previous, _current) = (_current, _previous);
         _current.Clear();
+        KeepHeadroom(_previous, _previous.Count);
+        KeepHeadroom(_current, _previous.Count);
         (_completed, _sums) = (_sums, _completed);
         _sums.Clear();
+    }
+
+    /// <summary>
+    /// Keeps room for twice the live instances, so the GPU processes that start between two samples don't make a map
+    /// resize, and allocate, in the middle of a read. It grows to three times when short, so it doesn't grow every sample.
+    /// </summary>
+    static void KeepHeadroom(Dictionary<(uint Pid, long Luid, int Node), Reading> map, int live)
+    {
+        if (map.EnsureCapacity(0) < 2 * live) map.EnsureCapacity(3 * live);
     }
 
     /// <summary>0 to 100; 0 for a node no instance used in both of the last two samples.</summary>

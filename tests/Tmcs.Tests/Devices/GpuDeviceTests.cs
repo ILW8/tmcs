@@ -75,8 +75,15 @@ public sealed class GpuDeviceTests(ITestOutputHelper output)
             Assert.True(g.DedicatedTotal > 0, $"{g.Name}: DedicatedTotal {g.DedicatedTotal}");
         });
 
-        // A rescan lists the same GPUs under the same LUIDs, so their keys and histories survive it.
+        var counters = new GpuCounters[gpus.Count];
+        Assert.True(source.ReadAll(counters));
+        var hadTemperature = counters.Select(c => c.TemperatureC.HasValue).ToArray();
+
+        // A rescan lists the same GPUs under the same LUIDs, so their keys and histories survive it. It also swaps the
+        // adapter handles: a stale one would only lose the temperature, so that is what shows the swap went right.
         Assert.Equal(gpus.Select(g => g.Luid), source.Enumerate().Select(g => g.Luid));
+        Assert.True(source.ReadAll(counters));
+        Assert.Equal(hadTemperature, counters.Select(c => c.TemperatureC.HasValue));
     }
 
     [Fact]
@@ -84,11 +91,16 @@ public sealed class GpuDeviceTests(ITestOutputHelper output)
     {
         using var source = new SystemGpuSource();
         var counters = new GpuCounters[source.Enumerate().Count];
-        for (var i = 0; i < 3; i++) source.ReadAll(counters);
+        // The warm-up sizes the PDH buffer and gives the instance maps room for twice the live instances, so GPU
+        // processes that start during the loop don't make them grow.
+        for (var i = 0; i < 3; i++) Assert.True(source.ReadAll(counters));
 
+        var allRead = true;
         var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 100; i++) source.ReadAll(counters);
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        for (var i = 0; i < 100; i++) allRead &= source.ReadAll(counters);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(allRead);
+        Assert.Equal(0, allocated);
     }
 
     [Fact]

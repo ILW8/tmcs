@@ -36,8 +36,7 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
     // Allocated once, so ReadAll doesn't allocate. Longs keep the D3DKMT buffers 8-byte aligned.
     readonly long[] _statistics = GC.AllocateArray<long>(Gdi32.QueryStatisticsSize / 8, pinned: true);
     readonly long[] _perfData = GC.AllocateArray<long>(Gdi32.AdapterPerfDataSize / 8, pinned: true);
-    byte* _items;           // the raw counter array; grows when PDH asks and never shrinks
-    uint _itemsCapacity;
+    readonly PdhArrayBuffer _items = new();
 
     Adapter[] _adapters = [];
     readonly nint _query;
@@ -73,19 +72,32 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
         var kept = new List<Adapter>();
         if (!_disposed && _counter != 0)
         {
-            List<DisplayDevice>? devices = null;
-            foreach (var listed in ListAdapters())
+            var listed = ListAdapters();
+            var i = 0;
+            try
             {
-                if (!IsHardwareRender(listed.Adapter))
+                List<DisplayDevice>? devices = null;
+                for (; i < listed.Length; i++)
                 {
-                    Close(listed.Adapter);
-                    continue;
+                    var handle = listed[i].Adapter;
+                    if (!IsHardwareRender(handle))
+                    {
+                        Close(handle);
+                        continue;
+                    }
+                    devices ??= ReadDisplayDevices();
+                    var luid = (long)listed[i].LuidHighPart << 32 | listed[i].LuidLowPart;
+                    var info = ReadInfo(kept.Count, handle, luid, devices, out var segments);
+                    gpus.Add(info);
+                    kept.Add(new Adapter(handle, luid, segments, info.NodeEngines));    // last, so a throw leaves it to the catch
                 }
-                devices ??= ReadDisplayDevices();
-                var luid = (long)listed.LuidHighPart << 32 | listed.LuidLowPart;
-                var info = ReadInfo(kept.Count, listed.Adapter, luid, devices, out var segments);
-                kept.Add(new Adapter(listed.Adapter, luid, segments, info.NodeEngines));
-                gpus.Add(info);
+            }
+            catch
+            {
+                // Every listed handle is open: close the kept ones and those not reached yet.
+                foreach (var a in kept) Close(a.Handle);
+                for (; i < listed.Length; i++) Close(listed[i].Adapter);
+                throw;
             }
         }
 
@@ -133,16 +145,15 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
         foreach (var a in _adapters) Close(a.Handle);
         _adapters = [];
         if (_query != 0) Pdh.PdhCloseQuery(_query);
-        NativeMemory.Free(_items);
-        _items = null;
+        _items.Dispose();
     }
 
     /// <summary>One collect, fed to the engine counters item by item.</summary>
     bool CollectEngines()
     {
-        if (Pdh.PdhCollectQueryData(_query) != Pdh.ErrorSuccess || !GetItems(out var count)) return false;
+        if (Pdh.PdhCollectQueryData(_query) != Pdh.ErrorSuccess || !_items.ReadRaw(_counter, out var count)) return false;
 
-        var items = (Pdh.RawCounterItem*)_items;
+        var items = (Pdh.RawCounterItem*)_items.Data;
         for (var i = 0; i < count; i++)
         {
             ref var item = ref items[i];
@@ -152,28 +163,6 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
         }
         _engines.EndSample();
         return true;
-    }
-
-    bool GetItems(out int count)
-    {
-        count = 0;
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            var size = _itemsCapacity;
-            var status = Pdh.PdhGetRawCounterArrayW(_counter, ref size, out var items, _items);
-            if (status == Pdh.ErrorSuccess)
-            {
-                count = (int)items;
-                return true;
-            }
-            if (status != Pdh.MoreData) return false;
-
-            // Slack for the processes that start between two calls: each GPU process adds an instance per node.
-            var wanted = size + Math.Max(4096, size / 8);
-            _items = (byte*)NativeMemory.Realloc(_items, wanted);
-            _itemsCapacity = wanted;
-        }
-        return false;
     }
 
     /// <summary>Sums the bytes resident in each segment: aperture 0 is VRAM, 1 is shared system memory.</summary>
@@ -302,7 +291,8 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
         // D3DKMT_SEGMENTSIZEINFO: DedicatedVideoMemorySize u64 @0, SharedSystemMemorySize u64 @16.
         var sizes = stackalloc long[3];
         long dedicatedVideo = 0, shared = 0;
-        if (QueryAdapter(handle, Gdi32.KmtqaiGetSegmentSize, sizes, 24))
+        var haveSizes = QueryAdapter(handle, Gdi32.KmtqaiGetSegmentSize, sizes, 24);
+        if (haveSizes)
         {
             dedicatedVideo = sizes[0];
             shared = sizes[2];
@@ -330,7 +320,8 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
             NodeEngines: engines,
             DedicatedTotal: dedicatedTotal,
             SharedTotal: shared,
-            HardwareReserved: Math.Max(0, dedicatedTotal - dedicatedVideo),
+            // Without the memory manager's size the difference would be the whole VRAM.
+            HardwareReserved: haveSizes ? Math.Max(0, dedicatedTotal - dedicatedVideo) : 0,
             DriverVersion: device?.DriverVersion ?? "",
             DriverDate: device?.DriverDate ?? "",
             DirectX: ReadDirectX(handle, chars),

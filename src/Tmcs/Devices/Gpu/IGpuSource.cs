@@ -52,6 +52,9 @@ internal interface IGpuSource : IDisposable
     /// </summary>
     bool ReadAll(Span<GpuCounters> perGpu);
 
-    /// <summary>The engine instances the utilization map holds, for the diagnostics log: it must follow the live instances.</summary>
+    /// <summary>
+    /// The engine instances the utilization map holds, for the diagnostics log: it must follow the live instances. It
+    /// counts every LUID PDH reports (the Basic Render Driver's included), not only the listed GPUs'.
+    /// </summary>
     int TrackedInstances { get; }
 }
