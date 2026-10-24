@@ -4,6 +4,7 @@ using Tmcs.Diagnostics;
 using Tmcs.Icons;
 using Tmcs.Native;
 using Tmcs.Performance;
+using Tmcs.Performance.Views;
 using Tmcs.Processes;
 using Tmcs.Sampling;
 using Tmcs.Settings;
@@ -12,10 +13,10 @@ using Tmcs.Ui;
 namespace Tmcs;
 
 /// <summary>
-/// The main window: the native menu bar, the tabs (only Details so far) and the wiring between the sample clock, the process
-/// table, the icon store, the performance model and the Details view. Every sample applies a snapshot to the table and reads every
-/// device, whatever is showing, so an exited process gives back its icon on the same tick and the graphs never miss a point. The
-/// Details view is refreshed only while it can be seen, and at once when it becomes visible again.
+/// The main window: the native menu bar, the Performance and Details tabs, and the wiring between the sample clock, the process
+/// table, the icon store, the performance model and the two views. Every sample applies a snapshot to the table and reads every
+/// device, whatever is showing, so an exited process gives back its icon on the same tick and the graphs never miss a point. Each
+/// view is refreshed only while it can be seen, and at once when it becomes visible again. tmcs always opens on Performance.
 /// In test mode (TMCS_DIAG set) it also runs the <see cref="TestHarness"/>, stays a background window that never takes focus or
 /// rises above other windows, and never saves the settings.
 /// </summary>
@@ -35,7 +36,9 @@ internal class MainForm : Form, IScenarioTarget
     private readonly IconStore _icons;
     private readonly HungWindowScanner _hungScanner = new();
     private readonly SampleClock _clock;
-    private readonly TabControl _tabs;
+    private readonly TabStrip _tabs;
+    private readonly TabPage _performancePage;
+    private readonly PerformanceView _performanceView;
     private readonly TabPage _detailsPage;
     private readonly DetailsView _details;
     private readonly NativeMenu _menu;
@@ -98,16 +101,17 @@ internal class MainForm : Form, IScenarioTarget
 
         _performance = new PerformanceModel(services.Devices);
 
+        _performanceView = new PerformanceView(_performance, _settings) { Dock = DockStyle.Fill };
+        _performancePage = new TabPage("Performance");
+        _performancePage.Controls.Add(_performanceView);
         _details = new DetailsView(_table, _images, _settings) { Dock = DockStyle.Fill };
         _details.SettingsChanged += (_, _) => ScheduleSave();
         _detailsPage = new TabPage("Details");
         _detailsPage.Controls.Add(_details);
-        _tabs = new TabControl { Dock = DockStyle.Fill };
+        _tabs = new TabStrip { Dock = DockStyle.Fill };
+        _tabs.TabPages.Add(_performancePage); // the first page is selected: tmcs opens on Performance, and never saves the tab
         _tabs.TabPages.Add(_detailsPage);
-        _tabs.SelectedIndexChanged += (_, _) =>
-        {
-            if (DetailsShowing) RefreshView();
-        };
+        _tabs.SelectedIndexChanged += (_, _) => RefreshShowingView();
         Controls.Add(_tabs);
 
         (_menu, _speedMenu) = CreateMenu();
@@ -129,6 +133,8 @@ internal class MainForm : Form, IScenarioTarget
 
     internal DetailsView Details => _details;
 
+    internal PerformanceView PerformanceView => _performanceView;
+
     internal TestHarness? Harness => _harness;
 
     /// <summary>
@@ -149,6 +155,8 @@ internal class MainForm : Form, IScenarioTarget
     }
 
     private bool DetailsShowing => _tabs.SelectedTab == _detailsPage && WindowState != FormWindowState.Minimized;
+
+    private bool PerformanceShowing => _tabs.SelectedTab == _performancePage && WindowState != FormWindowState.Minimized;
 
     private bool TestMode => _services.Options.IsTestMode;
 
@@ -201,7 +209,7 @@ internal class MainForm : Form, IScenarioTarget
     {
         base.OnResize(e);
         var minimized = WindowState == FormWindowState.Minimized;
-        if (_wasMinimized && !minimized && DetailsShowing) RefreshView(); // restored: show the current table at once
+        if (_wasMinimized && !minimized) RefreshShowingView(); // restored: show the current data at once
         _wasMinimized = minimized;
         if (!_loaded) return;
         if (!minimized) _settings.Maximized = WindowState == FormWindowState.Maximized; // minimized keeps what it restores to
@@ -288,7 +296,7 @@ internal class MainForm : Form, IScenarioTarget
             SinkToBottom();
         }
 
-        _tabs.SelectedTab = _detailsPage;
+        _tabs.ShowPage(_detailsPage);
         _clock.Speed = a == ScenarioAction.Paused ? UpdateSpeed.Paused : UpdateSpeed.Normal;
     }
 
@@ -311,7 +319,7 @@ internal class MainForm : Form, IScenarioTarget
     private static int HiWord(nint value) => (int)((value >> 16) & 0xFFFF);
 
     /// <summary>
-    /// One sample: read a snapshot, apply it to the table, read every device at the same time stamp, and refresh the view if it can
+    /// One sample: read a snapshot, apply it to the table, read every device at the same time stamp, and refresh the view that can
     /// be seen.
     /// </summary>
     private void OnSample()
@@ -331,7 +339,14 @@ internal class MainForm : Form, IScenarioTarget
         var t = Stopwatch.GetElapsedTime(_startTimestamp).Ticks; // TimeSpan ticks are 100 ns
         _table.Apply(_snapshot, t);
         _performance.Sample(t, _snapshot);
+        RefreshShowingView();
+    }
+
+    /// <summary>Refreshes the view that can be seen, if any.</summary>
+    private void RefreshShowingView()
+    {
         if (DetailsShowing) RefreshView();
+        else if (PerformanceShowing) _performanceView.RefreshVisible();
     }
 
     /// <summary>Shows the current table. Apply resets every row's status, so the hung scan comes first.</summary>
@@ -415,6 +430,30 @@ internal class MainForm : Form, IScenarioTarget
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Debug.WriteLine(e);
+        }
+    }
+
+    /// <summary>
+    /// The tab strip. <see cref="ShowPage"/> selects a page from code without moving the focus: selecting through
+    /// <see cref="TabControl.SelectedTab"/> focuses the page's first control, and focusing a control of an inactive window
+    /// activates the window, which test mode's must never be.
+    /// </summary>
+    internal sealed class TabStrip : TabControl
+    {
+        private const uint TcmSetCurSel = 0x1300 + 12;
+
+        public void ShowPage(TabPage page)
+        {
+            var index = TabPages.IndexOf(page);
+            if (index < 0 || index == SelectedIndex) return;
+            if (!IsHandleCreated)
+            {
+                SelectedIndex = index; // only recorded until the handle exists
+                return;
+            }
+
+            User32.SendMessage(Handle, TcmSetCurSel, index, 0);
+            OnSelectedIndexChanged(EventArgs.Empty); // shows the page and raises SelectedIndexChanged, without the focus move
         }
     }
 }

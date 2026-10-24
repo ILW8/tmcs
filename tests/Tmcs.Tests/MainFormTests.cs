@@ -61,6 +61,7 @@ public sealed partial class MainFormTests : IDisposable
     public void First_sample_populates_details_rows() => Sta.Run(() =>
     {
         using var rig = new Rig(SettingsPath);
+        SelectTab(rig.Form, "Details");
 
         rig.Form.ShowOffscreen();
 
@@ -71,15 +72,16 @@ public sealed partial class MainFormTests : IDisposable
     });
 
     [Fact]
-    public void Window_has_title_tmcs_one_details_tab_and_a_dpi_scaled_minimum_size() => Sta.Run(() =>
+    public void Window_has_title_tmcs_performance_and_details_tabs_and_a_dpi_scaled_minimum_size() => Sta.Run(() =>
     {
         using var rig = new Rig(SettingsPath);
         rig.Form.ShowOffscreen();
 
         Assert.Equal("tmcs", rig.Form.Text);
-        var tabs = rig.Form.Controls.OfType<TabControl>().Single();
-        Assert.Equal(["Details"], tabs.TabPages.Cast<TabPage>().Select(p => p.Text));
-        Assert.Same(rig.Form.Details, tabs.TabPages[0].Controls.Cast<Control>().Single());
+        var tabs = Tabs(rig.Form);
+        Assert.Equal(["Performance", "Details"], tabs.TabPages.Cast<TabPage>().Select(p => p.Text));
+        Assert.Same(rig.Form.PerformanceView, tabs.TabPages[0].Controls.Cast<Control>().Single());
+        Assert.Same(rig.Form.Details, tabs.TabPages[1].Controls.Cast<Control>().Single());
         var dpi = rig.Form.DeviceDpi;
         Assert.Equal(new Size(Scale(400, dpi), Scale(300, dpi)), rig.Form.MinimumSize);
         Assert.Equal(new Size(1294, 712), rig.Form.Size); // first run: the default window size
@@ -220,6 +222,7 @@ public sealed partial class MainFormTests : IDisposable
     {
         using var rig = new Rig(SettingsPath);
         rig.Form.ShowOffscreen();
+        SelectTab(rig.Form, "Details");
         rig.Form.Command(CommandIds.SpeedPaused);
         rig.Snapshots.Processes.RemoveAt(0);
 
@@ -241,11 +244,11 @@ public sealed partial class MainFormTests : IDisposable
         var history = rig.Form.Performance.Cpu.History;
         Assert.Equal(1, history.Count); // the first sample, as the window loaded
 
-        var tabs = rig.Form.Controls.OfType<TabControl>().Single();
+        var tabs = Tabs(rig.Form);
         var expected = history.Count;
         foreach (TabPage page in tabs.TabPages)
         {
-            tabs.SelectedTab = page;
+            SelectTab(rig.Form, page.Text);
             rig.Timer.Fire();
             Assert.Equal(++expected, history.Count);
         }
@@ -253,6 +256,61 @@ public sealed partial class MainFormTests : IDisposable
         rig.Form.MinimizeWithoutActivation();
         rig.Timer.Fire();
         Assert.Equal(++expected, history.Count);
+    });
+
+    [Fact]
+    public void Opens_on_the_performance_tab() => Sta.Run(() =>
+    {
+        using (var rig = new Rig(SettingsPath))
+        {
+            rig.Form.ShowOffscreen();
+
+            Assert.Equal("Performance", Tabs(rig.Form).SelectedTab!.Text);
+            SelectTab(rig.Form, "Details");
+            rig.Form.Close(); // saves the settings
+        }
+
+        using var again = new Rig(SettingsPath);
+        again.Form.ShowOffscreen();
+        Assert.Equal("Performance", Tabs(again.Form).SelectedTab!.Text); // the selected tab is not remembered
+    });
+
+    [Fact]
+    public void Panes_repaint_only_while_visible() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        var pane = rig.Form.PerformanceView.VisiblePane;
+
+        SelectTab(rig.Form, "Details");
+        Application.DoEvents();
+        var paints = pane.RepaintCount;
+        FireSamples(5);
+        Assert.Equal(paints, pane.RepaintCount);
+
+        SelectTab(rig.Form, "Performance");
+        Application.DoEvents();
+        Assert.True(pane.RepaintCount > paints, "selecting the tab did not repaint the pane"); // showing a window off-screen paints nothing
+        paints = pane.RepaintCount;
+        FireSamples(1);
+        Assert.True(pane.RepaintCount > paints, "a sample did not repaint the visible pane");
+
+        rig.Form.MinimizeWithoutActivation();
+        paints = pane.RepaintCount;
+        FireSamples(5);
+        Assert.Equal(paints, pane.RepaintCount);
+
+        rig.Form.RestoreWithoutActivation();
+        Assert.True(pane.RepaintCount > paints, "restoring did not repaint the pane");
+
+        void FireSamples(int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                rig.Timer.Fire();
+                Application.DoEvents();
+            }
+        }
     });
 
     [Fact]
@@ -317,6 +375,7 @@ public sealed partial class MainFormTests : IDisposable
     {
         using var rig = new Rig(SettingsPath);
         rig.Form.ShowOffscreen();
+        SelectTab(rig.Form, "Details");
         rig.Form.MinimizeWithoutActivation();
         var live = rig.Form.Icons.LiveCount;
 
@@ -333,6 +392,7 @@ public sealed partial class MainFormTests : IDisposable
     {
         using var rig = new Rig(SettingsPath);
         rig.Form.ShowOffscreen();
+        SelectTab(rig.Form, "Details");
         rig.Form.MinimizeWithoutActivation();
         rig.Snapshots.Processes.RemoveAll(p => p.Pid == 2);
         rig.Form.Clock.RefreshNow();
@@ -349,6 +409,7 @@ public sealed partial class MainFormTests : IDisposable
     {
         using var rig = new Rig(SettingsPath);
         rig.Form.ShowOffscreen();
+        SelectTab(rig.Form, "Details");
         var cpuReads = rig.Devices.FakeCpu().Reads;
 
         rig.Snapshots.Fail = true;
@@ -464,6 +525,15 @@ public sealed partial class MainFormTests : IDisposable
         var bar = GetMenu(form.Handle);
         for (var i = 0; i < GetMenuItemCount(bar); i++) User32.SendMessage(form.Handle, WmInitMenuPopup, GetSubMenu(bar, i), i);
         return (GetMenuState(bar, (uint)id, 0) & MfChecked) != 0;
+    }
+
+    private static TabControl Tabs(MainForm form) => form.Controls.OfType<TabControl>().Single();
+
+    /// <summary>Selects a tab as test mode's scenario does: setting <see cref="TabControl.SelectedTab"/> would activate the window.</summary>
+    private static void SelectTab(MainForm form, string text)
+    {
+        var tabs = (MainForm.TabStrip)Tabs(form);
+        tabs.ShowPage(tabs.TabPages.Cast<TabPage>().Single(p => p.Text == text));
     }
 
     private static int Scale(int logical, int dpi) => (int)Math.Round(logical * dpi / 96.0, MidpointRounding.AwayFromZero);

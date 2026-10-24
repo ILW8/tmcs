@@ -49,10 +49,26 @@ public class GraphPainterTests
       var px = Paint(h);
       Assert.Equal(0xD9EAF4, px[59, 5]); Assert.Equal(0xD9EAF4, px[80, 5]); Assert.Equal(0xFFFFFF, px[62, 5]); }
 
+    // GetGuiResources sees GDI and USER handles only; the allocation count is what catches a GDI+ object (a Matrix, a Region)
+    // created per paint.
     [Fact] public void Painting_creates_no_gdi_or_user_objects()
     { var h = Steady(70, 20); using var bmp = new Bitmap(122, 76); using var g = Graphics.FromImage(bmp);
       using var p = new GraphPainter(GraphPalettes.Cpu); p.Paint(g, new Rectangle(0, 0, 122, 76), h, 0, 100, 10, 1);
       var gdi = GuiResources(0); var user = GuiResources(1);
+      var bytes = GC.GetAllocatedBytesForCurrentThread();
       for (var i = 0; i < 1000; i++) p.Paint(g, new Rectangle(0, 0, 122, 76), h, 0, 100, 10, 1);
-      Assert.Equal(gdi, GuiResources(0)); Assert.Equal(user, GuiResources(1)); }
+      var allocated = GC.GetAllocatedBytesForCurrentThread() - bytes;
+      Assert.Equal(gdi, GuiResources(0)); Assert.Equal(user, GuiResources(1)); Assert.Equal(0, allocated); }
+
+    [Fact] public void Tiny_bounds_paint_nothing_and_do_not_throw()
+    { using var bmp = new Bitmap(122, 76); using var g = Graphics.FromImage(bmp); g.Clear(Color.White);
+      using var p = new GraphPainter(GraphPalettes.Cpu); var h = Steady(70, 20);
+      foreach (var bounds in new[] { new Rectangle(0, 0, 2, 76), new Rectangle(0, 0, 122, 2), Rectangle.Empty, new Rectangle(10, 10, -5, -5) })
+          p.Paint(g, bounds, h, 0, 100, 10, 1);
+      for (var x = 0; x < 122; x++) for (var y = 0; y < 76; y++) Assert.Equal(0xFFFFFF, bmp.GetPixel(x, y).ToArgb() & 0xFFFFFF); }
+
+    [Fact] public void Nan_values_paint_as_zero()
+    { var h = Steady(50, 0); h.Add(61 * 10_000_000L, [float.NaN, float.NaN]); // the newest point drops to 0
+      var px = Paint(h);
+      Assert.Equal(0xF1F6FA, px[50, 70]); Assert.Equal(0xFFFFFF, px[50, 20]); } // the half-load fill is still drawn
 }

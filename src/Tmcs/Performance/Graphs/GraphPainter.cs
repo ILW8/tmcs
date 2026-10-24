@@ -8,6 +8,9 @@ namespace Tmcs.Performance.Graphs;
 /// </summary>
 internal sealed class GraphPainter : IDisposable
 {
+    /// <summary>Narrower or shorter than this, a graph has no interior and is not painted.</summary>
+    const int MinSide = 3;
+
     readonly SolidBrush _border, _topCorner, _bottomCorner, _grid, _fill, _gridInFill, _secondFill, _gridInSecondFill;
     readonly Pen _line, _secondLine;
     readonly GraphicsPath _clip = new();
@@ -34,14 +37,22 @@ internal sealed class GraphPainter : IDisposable
     public GraphPalette Palette { get; }
 
     /// <summary>
-    /// Paints a graph whose border is the outer pixels of <paramref name="bounds"/>. Values are clamped to
-    /// [0, <paramref name="max"/>]; <paramref name="max"/> &lt;= 0 draws no data. <paramref name="gridSamples"/> 0 means
-    /// no grid. <paramref name="second"/> is the series drawn in the palette's second style, or -1.
+    /// Paints a graph whose border is the outer pixels of <paramref name="bounds"/>, or nothing when <paramref name="bounds"/>
+    /// is narrower or shorter than 3 px. Values are clamped to [0, <paramref name="max"/>], and NaN counts as 0;
+    /// <paramref name="max"/> &lt;= 0 draws no data. <paramref name="gridSamples"/> 0 means no grid. <paramref name="second"/>
+    /// is the series drawn in the palette's second style, or -1.
+    /// <para>
+    /// <see cref="Graphics.Save"/> allocates on every call, so the clip and the modes this changes are put back by hand. The
+    /// caller's clip comes back as its bounding rectangle.
+    /// </para>
     /// </summary>
     public void Paint(Graphics g, Rectangle bounds, History history, int series, float max, int gridSamples, int second = -1)
     {
+        if (bounds.Width < MinSide || bounds.Height < MinSide) return;
         int left = bounds.X, right = bounds.Right - 1, top = bounds.Y, bottom = bounds.Bottom - 1;
-        var state = g.Save();
+        var clip = g.ClipBounds;
+        var smoothing = g.SmoothingMode;
+        var pixelOffset = g.PixelOffsetMode;
         try
         {
             g.IntersectClip(new Rectangle(left + 1, top + 1, bounds.Width - 2, bounds.Height - 2));
@@ -70,7 +81,12 @@ internal sealed class GraphPainter : IDisposable
                 }
             }
         }
-        finally { g.Restore(state); }
+        finally
+        {
+            g.SetClip(clip);
+            g.SmoothingMode = smoothing;
+            g.PixelOffsetMode = pixelOffset;
+        }
 
         DrawBorder(g, left, right, top, bottom);
     }
@@ -85,14 +101,16 @@ internal sealed class GraphPainter : IDisposable
         g.FillPolygon(fill, polygon);
 
         if (gridSamples <= 0) return;
-        // The grid shows through a fill in a darker color; the clip is the polygon itself.
-        var state = g.Save();
+        // The grid shows through a fill in a darker color; the clip is the polygon itself. The clip before it comes back by
+        // its bounds, as in Paint.
+        var clip = g.ClipBounds;
         _clip.Reset();
         _clip.AddPolygon(polygon);
         g.SetClip(_clip, CombineMode.Intersect);
         g.SmoothingMode = SmoothingMode.None;
         DrawGrid(g, gridInFill, history, left, right, top, bottom, gridSamples);
-        g.Restore(state);
+        g.SetClip(clip);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
     }
 
     int BuildLine(History history, int series, float max, int first, int left, int right, int top, int bottom)
@@ -103,7 +121,8 @@ internal sealed class GraphPainter : IDisposable
         var n = 0;
         for (var i = first; i < history.Count; i++)
         {
-            var v = Math.Clamp(history.ValueAt(series, i), 0f, max);
+            var value = history.ValueAt(series, i);
+            var v = float.IsNaN(value) ? 0f : Math.Clamp(value, 0f, max); // Clamp passes NaN through, and GDI+ must not get it
             var x = right - (latest - history.TimeAt(i)) / (double)History.Window100Ns * width;
             _points[n++] = new PointF((float)x, (float)(bottom - v / max * height));
         }
