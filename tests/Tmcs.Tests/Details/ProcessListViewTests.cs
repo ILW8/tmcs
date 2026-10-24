@@ -15,6 +15,11 @@ public partial class ProcessListViewTests
     private const uint LvmGetCountPerPage = 0x1028;
     private const uint LvmGetItemW = 0x104B;
     private const uint LvmGetItemTextW = 0x1073;
+    private const uint LvmScroll = 0x1014;
+    private const uint LvmSetItemState = 0x102B;
+    private const uint LvmSetItemCount = 0x102F;
+    private const uint LvisFocused = 0x1;
+    private const uint LvisSelected = 0x2;
     private const uint HdmGetItemRect = 0x1207;
     private const uint HdmGetItemW = 0x120B;
     private const uint WmContextMenu = 0x007B;
@@ -154,6 +159,39 @@ public partial class ProcessListViewTests
         Assert.Equal(top + 3 - perPage, TopIndex(list));
     });
 
+    // On a count change the native control scrolls while it applies the count, to the focused row or to row 0 when none is
+    // focused, unless it is told not to. Putting the top row back afterwards ends at the same place, but each scroll is
+    // drawn at once, which shows as a flicker. So the top index is read inside the call, right after the message.
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public void Item_count_change_never_moves_the_top_index_not_even_inside_the_call(bool focusOffscreenRow, bool reuseOneItem) => Sta.Run(() =>
+    {
+        using var form = Host(out var list, rows: 500, row: RowSource(reuseOneItem));
+        form.ShowOffscreen();
+        if (focusOffscreenRow)
+        {
+            var state = new LvItem { State = LvisFocused | LvisSelected, StateMask = LvisFocused | LvisSelected };
+            SendMessage(list.Handle, LvmSetItemState, 5, ref state);
+        }
+
+        list.EnsureVisible(150);
+        var top = TopIndex(list);
+        Assert.True(top > 5, $"top index {top}: the focused row 5 is not above the view");
+
+        var spy = new TopIndexSpy(list);
+        try { list.SetItemCountKeepScroll(520); }
+        finally { spy.ReleaseHandle(); } // before the form, and with it the window, goes
+
+        Assert.Equal(520, list.VirtualListSize);
+        Assert.Contains(spy.Seen, s => s.Message == LvmSetItemCount); // the spy is on the window, or the check below proves nothing
+        var moved = spy.Seen.Where(s => s.Top != top).Select(s => $"0x{s.Message:X} left the top at {s.Top}").ToList();
+        Assert.True(moved.Count == 0, $"top index {top} moved inside the call: {string.Join("; ", moved)}");
+        Assert.Equal(top, TopIndex(list));
+    });
+
     [Fact]
     public void Very_long_text_is_served_without_error() => Sta.Run(() =>
     {
@@ -222,6 +260,30 @@ public partial class ProcessListViewTests
 
         Assert.Equal([(-1, new Point(origin.X, origin.Y))], raised);
     });
+
+    /// <summary>
+    /// Watches a list view's messages from the outside, so it sees them as sent, before the control's own WndProc. After each
+    /// <c>LVM_SETITEMCOUNT</c> and <c>LVM_SCROLL</c> has been processed it records the top index. It changes nothing.
+    /// </summary>
+    private sealed class TopIndexSpy : NativeWindow
+    {
+        private readonly ProcessListView _list;
+
+        public TopIndexSpy(ProcessListView list)
+        {
+            _list = list;
+            AssignHandle(list.Handle);
+        }
+
+        /// <summary>The message and the top index right after it was processed, in order.</summary>
+        public List<(uint Message, int Top)> Seen { get; } = [];
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg is (int)LvmSetItemCount or (int)LvmScroll) Seen.Add(((uint)m.Msg, TopIndex(_list)));
+        }
+    }
 
     /// <summary>An 800×600 off-screen form filled by a list with five 100 px columns and <paramref name="rows"/> rows.</summary>
     private static OffscreenForm Host(out ProcessListView list, int rows = 5, Func<int, ListViewItem>? row = null)

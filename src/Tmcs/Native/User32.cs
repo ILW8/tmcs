@@ -13,17 +13,8 @@ internal static partial class User32
     /// <summary><c>LVM_GETNEXTITEM</c>: wParam is the item to start after (-1 for the first), lParam the <c>LVNI_*</c> flags; returns the item or -1.</summary>
     public const uint LvmGetNextItem = 0x100C;
 
-    /// <summary><c>LVM_GETITEMRECT</c>: wParam is the item, lParam a <see cref="NativeRect"/> whose <c>Left</c> holds an <c>LVIR_*</c> value.</summary>
-    public const uint LvmGetItemRect = 0x100E;
-
-    /// <summary><c>LVM_SCROLL</c>: lParam is the vertical distance in pixels, which report view rounds to whole rows.</summary>
-    public const uint LvmScroll = 0x1014;
-
     /// <summary><c>LVM_GETHEADER</c>: returns the header control's handle.</summary>
     public const uint LvmGetHeader = 0x101F;
-
-    /// <summary><c>LVM_GETTOPINDEX</c>.</summary>
-    public const uint LvmGetTopIndex = 0x1027;
 
     /// <summary><c>LVM_SETITEMSTATE</c>: wParam is the item (-1 for every item), lParam an <see cref="LvItem"/> with <c>State</c> and <c>StateMask</c>.</summary>
     public const uint LvmSetItemState = 0x102B;
@@ -51,9 +42,6 @@ internal static partial class User32
 
     /// <summary><c>LVSIL_SMALL</c>.</summary>
     public const nint LvsilSmall = 1;
-
-    /// <summary><c>LVIR_BOUNDS</c>.</summary>
-    public const int LvirBounds = 0;
 
     /// <summary><c>HDM_GETITEMCOUNT</c>.</summary>
     public const uint HdmGetItemCount = 0x1200;

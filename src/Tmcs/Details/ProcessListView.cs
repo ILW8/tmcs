@@ -14,6 +14,15 @@ internal sealed class ProcessListView : ListView
 
     private const int WmContextMenu = 0x007B;
 
+    /// <summary><c>LVM_SETITEMCOUNT</c>: wParam is the new item count, lParam the <c>LVSICF_*</c> flags.</summary>
+    private const int LvmSetItemCount = 0x102F;
+
+    /// <summary>
+    /// <c>LVSICF_NOSCROLL</c>: the control keeps the top row where it is while it applies the new count. Without it, an
+    /// owner-data list view scrolls to the focused row, or to row 0 when none is focused, and WinForms always sends 0.
+    /// </summary>
+    private const int LvsicfNoScroll = 0x2;
+
     private nint _sharedImageList;
 
     /// <summary>True while <see cref="SetSortArrow"/> writes a header item, whose notification is not a column resize.</summary>
@@ -87,28 +96,11 @@ internal sealed class ProcessListView : ListView
 
     /// <summary>
     /// Sets <see cref="ListView.VirtualListSize"/> without moving the view: the top row stays on top, unless too few rows
-    /// remain below it to fill the page, in which case the last page is shown.
+    /// remain below it to fill the page, in which case the last page is shown. <see cref="WndProc"/> adds <c>LVSICF_NOSCROLL</c>
+    /// to every native count message, so the control never scrolls, not even briefly. Scrolling back afterwards would not do:
+    /// both scrolls are drawn at once, which shows as a flicker.
     /// </summary>
-    public void SetItemCountKeepScroll(int count)
-    {
-        if (!IsHandleCreated)
-        {
-            VirtualListSize = count;
-            return;
-        }
-
-        var top = GetTopIndex();
-        // The native control scrolls back to row 0 here. WinForms' setter restores the top row, except when the handler
-        // returns the same ListViewItem object for every row (its check compares references), so check and correct below.
-        VirtualListSize = count;
-        var now = GetTopIndex();
-        if (now == top) return;
-
-        var row = new User32.NativeRect { Left = User32.LvirBounds };
-        if (User32.SendMessage(Handle, User32.LvmGetItemRect, now, ref row) == 0) return; // no rows left
-        // The control stops at the last page by itself when too few rows remain below the old top row.
-        User32.SendMessage(Handle, User32.LvmScroll, 0, (top - now) * (row.Bottom - row.Top));
-    }
+    public void SetItemCountKeepScroll(int count) => VirtualListSize = count;
 
     protected override void OnHandleCreated(EventArgs e)
     {
@@ -131,12 +123,13 @@ internal sealed class ProcessListView : ListView
             return; // base would also open the row ContextMenuStrip
         }
 
+        // WinForms sends this from its VirtualListSize setter, and with flags 0. Every count change goes through here.
+        if (m.Msg == LvmSetItemCount) m.LParam |= LvsicfNoScroll;
+
         base.WndProc(ref m);
     }
 
     private nint HeaderHandle => User32.SendMessage(Handle, User32.LvmGetHeader, 0, 0);
-
-    private int GetTopIndex() => (int)User32.SendMessage(Handle, User32.LvmGetTopIndex, 0, 0);
 
     private void AttachImageList() => User32.SendMessage(Handle, User32.LvmSetImageList, User32.LvsilSmall, _sharedImageList);
 
