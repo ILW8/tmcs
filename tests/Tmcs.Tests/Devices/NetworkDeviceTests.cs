@@ -94,6 +94,16 @@ public sealed class NetworkDeviceTests
     }
 
     [Fact]
+    public void Wifi_without_data_has_a_blank_connection_type()
+    {
+        var (wifi, fake) = Make(wifi: true);
+        fake.Wifi = null;
+        Read(wifi, fake, Second, 0, 0);
+        Assert.Equal("Wi-Fi", wifi.Title);
+        Assert.Equal("", wifi.ConnectionType);
+    }
+
+    [Fact]
     public void Down_adapter_marks_the_device_failed()
     {
         var (net, fake) = Make();

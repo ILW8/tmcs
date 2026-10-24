@@ -20,7 +20,7 @@ internal sealed class NetworkDevice(INetworkSource source, AdapterInfo info) : D
     public double SendBitsPerSecond { get; private set; }
     public double ReceiveBitsPerSecond { get; private set; }
     public WifiInfo? Wifi { get; private set; }
-    public string ConnectionType => Info.IsWifi && Wifi != null ? Wifi.PhyType : "Ethernet";
+    public string ConnectionType => Info.IsWifi ? Wifi?.PhyType ?? "" : "Ethernet";
 
     /// <summary>The reference couldn't find Task Manager's mapping; this one gives the captured 4 of 5 bars at quality 60-79.</summary>
     public static int SignalBars(int quality) => quality <= 0 ? 0 : Math.Min(5, quality / 20 + 1);

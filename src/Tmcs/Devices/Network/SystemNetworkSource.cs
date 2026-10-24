@@ -28,19 +28,20 @@ internal sealed unsafe class SystemNetworkSource : INetworkSource
     nint _wlan;
     volatile bool _changed = true;
     bool _disposed;
+    bool _registrationFailed;
 
     public SystemNetworkSource()
     {
         _self = GCHandle.Alloc(this);
         var context = (void*)GCHandle.ToIntPtr(_self);
-        // Best effort: if a registration fails, Changed stays as it is and the model's other triggers still rescan.
+        // If a registration fails, Changed reports true from then on, so the model rescans every tick instead of never.
         fixed (nint* interfaceNotify = &_interfaceNotify)
-            IpHlpApi.NotifyIpInterfaceChange(AfUnspecFamily, &OnChange, context, 0, interfaceNotify);
+            _registrationFailed |= IpHlpApi.NotifyIpInterfaceChange(AfUnspecFamily, &OnChange, context, 0, interfaceNotify) != 0;
         fixed (nint* addressNotify = &_addressNotify)
-            IpHlpApi.NotifyUnicastIpAddressChange(AfUnspecFamily, &OnChange, context, 0, addressNotify);
+            _registrationFailed |= IpHlpApi.NotifyUnicastIpAddressChange(AfUnspecFamily, &OnChange, context, 0, addressNotify) != 0;
     }
 
-    public bool Changed => _changed;
+    public bool Changed => _changed || _registrationFailed;
 
     [UnmanagedCallersOnly]
     static void OnChange(void* context, void* row, uint notificationType)
@@ -59,7 +60,11 @@ internal sealed unsafe class SystemNetworkSource : INetworkSource
     {
         _changed = false;
         var adapters = new List<AdapterInfo>();
-        if (!FillAddresses()) return adapters;
+        if (!FillAddresses())
+        {
+            _changed = true;    // retry on the next tick rather than waiting for a system change
+            return adapters;
+        }
 
         fixed (byte* buffer = _addresses)
         {
