@@ -9,6 +9,7 @@ public partial class NativeMenuTests
     // Values the tests check are written out here rather than taken from User32, so a wrong production constant shows up.
     private const uint MfByPosition = 0x400;
     private const uint MfGrayed = 0x1;
+    private const uint MfChecked = 0x8;
     private const uint MfPopup = 0x10;
     private const uint MfSeparator = 0x800;
 
@@ -67,6 +68,32 @@ public partial class NativeMenuTests
     }
 
     [Fact]
+    public void SetChecked_checks_and_clears_an_item_by_command_id()
+    {
+        using var bar = NativeMenu.Bar();
+        bar.AddPopup("&Options", NativeMenu.Popup(("A", 1), ("B", 2)));
+
+        bar.SetChecked(2, true); // found in the submenu: by command id searches submenus
+        Assert.Equal(MfChecked, GetMenuState(bar.Handle, 2, 0) & MfChecked);
+        Assert.Equal(0u, GetMenuState(bar.Handle, 1, 0) & MfChecked);
+
+        bar.SetChecked(2, false);
+        Assert.Equal(0u, GetMenuState(bar.Handle, 2, 0) & MfChecked);
+    }
+
+    [Fact]
+    public void CheckRadio_checks_one_item_of_a_range_and_clears_the_rest()
+    {
+        using var menu = NativeMenu.Popup(("High", 10), ("Normal", 11), ("Low", 12), ("Paused", 13));
+
+        menu.CheckRadio(10, 13, 13);
+        Assert.Equal([false, false, false, true], Checks(menu.Handle));
+
+        menu.CheckRadio(10, 13, 11);
+        Assert.Equal([false, true, false, false], Checks(menu.Handle));
+    }
+
+    [Fact]
     public void Bar_holds_popups_that_it_destroys_with_itself()
     {
         var bar = NativeMenu.Bar();
@@ -113,6 +140,9 @@ public partial class NativeMenuTests
         Assert.Throws<ArgumentException>(() => other.AddPopup("Y", child));
         Assert.Equal(0, GetMenuItemCount(other.Handle));
     }
+
+    private static bool[] Checks(nint menu) =>
+        [.. Enumerable.Range(0, GetMenuItemCount(menu)).Select(i => (GetMenuState(menu, (uint)i, MfByPosition) & MfChecked) != 0)];
 
     private static unsafe string Text(nint menu, uint position)
     {

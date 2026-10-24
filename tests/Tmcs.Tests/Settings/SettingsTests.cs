@@ -342,6 +342,26 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public void Normalize_moves_the_sort_off_a_hidden_column_to_name_ascending()
+    {
+        var s = AppSettings.CreateDefault();
+        s.SortColumn = DetailsColumn.Threads; // hidden by default
+        s.SortDescending = true;
+
+        s.Normalize();
+
+        Assert.Equal(DetailsColumn.Name, s.SortColumn);
+        Assert.False(s.SortDescending);
+
+        // A visible sort column, and its direction, are kept.
+        s.SortColumn = DetailsColumn.Cpu;
+        s.SortDescending = true;
+        s.Normalize();
+        Assert.Equal(DetailsColumn.Cpu, s.SortColumn);
+        Assert.True(s.SortDescending);
+    }
+
+    [Fact]
     public void Normalize_drops_null_entries()
     {
         var s = new AppSettings { DetailsColumns = [null!, new() { Id = DetailsColumn.Pid, Visible = true, Width = 60 }, null!] };

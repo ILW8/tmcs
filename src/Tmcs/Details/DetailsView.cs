@@ -186,14 +186,8 @@ internal sealed class DetailsView : UserControl
     /// <summary>After columns were shown or hidden: keeps the settings dense, moves the sort off a hidden column, and rebuilds.</summary>
     private void VisibilityChanged()
     {
-        _settings.Normalize();
         var resort = !Setting(_settings.SortColumn).Visible;
-        if (resort)
-        {
-            _settings.SortColumn = DetailsColumn.Name;
-            _settings.SortDescending = false;
-        }
-
+        _settings.Normalize(); // also moves the sort off a hidden column, to Name ascending
         ApplyColumnSettings();
         if (resort) RefreshRows();
         SettingsChanged?.Invoke(this, EventArgs.Empty);

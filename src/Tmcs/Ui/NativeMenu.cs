@@ -57,6 +57,12 @@ internal sealed class NativeMenu : IDisposable
     /// <summary>Enables or grays the item with command id <paramref name="id"/>.</summary>
     public void SetEnabled(int id, bool enabled) => User32.EnableMenuItem(Handle, (uint)id, enabled ? 0 : User32.MfGrayed);
 
+    /// <summary>Checks or clears the item with command id <paramref name="id"/>, here or in a submenu.</summary>
+    public void SetChecked(int id, bool isChecked) => User32.CheckMenuItem(Handle, (uint)id, isChecked ? User32.MfChecked : 0);
+
+    /// <summary>Gives the item <paramref name="id"/> a radio check mark and clears the other items from <paramref name="first"/> to <paramref name="last"/>, all in this menu.</summary>
+    public void CheckRadio(int first, int last, int id) => User32.CheckMenuRadioItem(Handle, (uint)first, (uint)last, (uint)id, 0);
+
     /// <summary>Shows the menu at <paramref name="screen"/> and waits until it closes.</summary>
     /// <returns>The chosen item's id, or 0 when the menu was dismissed.</returns>
     public int Track(Control owner, Point screen) =>

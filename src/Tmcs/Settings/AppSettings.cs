@@ -14,6 +14,7 @@ internal sealed class AppSettings
 
     public int? WindowY { get; set; }
 
+    /// <summary>Width of the restored window in pixels, frame included. <see cref="WindowHeight"/> likewise.</summary>
     public int WindowWidth { get; set; } = 1294;
 
     public int WindowHeight { get; set; } = 712;
@@ -74,7 +75,13 @@ internal sealed class AppSettings
         for (var i = 0; i < columns.Count; i++) columns[i].DisplayIndex = i;
         DetailsColumns = columns;
 
-        if (!Enum.IsDefined(SortColumn)) SortColumn = DetailsColumn.Name;
+        // A sort column that is unknown or hidden goes back to the default sort, Name ascending.
+        if (!Enum.IsDefined(SortColumn) || !columns.Exists(c => c.Id == SortColumn && c.Visible))
+        {
+            SortColumn = DetailsColumn.Name;
+            SortDescending = false;
+        }
+
         if (!Enum.IsDefined(UpdateSpeed)) UpdateSpeed = UpdateSpeed.Normal;
         HiddenAdapters ??= [];
         // ReSharper restore ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
