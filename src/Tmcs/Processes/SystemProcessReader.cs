@@ -12,8 +12,12 @@ internal sealed unsafe class SystemProcessReader : IProcessSnapshotSource
 
     byte[] _buffer;
 
-    /// <param name="initialBufferSize">Starting buffer size in bytes. Tests lower it to exercise the growth path.</param>
-    public SystemProcessReader(int initialBufferSize = DefaultBufferSize) => _buffer = new byte[initialBufferSize];
+    /// <param name="initialBufferSize">Starting buffer size in bytes, at least 1, since growing doubles it. Tests lower it to exercise the growth path.</param>
+    public SystemProcessReader(int initialBufferSize = DefaultBufferSize)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(initialBufferSize);
+        _buffer = new byte[initialBufferSize];
+    }
 
     public void Read(List<RawProcess> into)
     {

@@ -68,4 +68,11 @@ public class ProcessSnapshotParserTests
             Assert.Single(list, r => r.Pid == Environment.ProcessId);
         }
     }
+
+    // A buffer of 0 bytes would double to 0 forever.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Reader_refuses_a_buffer_size_that_is_not_positive(int size) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SystemProcessReader(size));
 }
