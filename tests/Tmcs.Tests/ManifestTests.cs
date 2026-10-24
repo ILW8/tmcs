@@ -13,7 +13,9 @@ public class ManifestTests
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "tmcs.slnx"))) dir = dir.Parent;
-        Assert.NotNull(dir);
+        if (dir is null)
+            Assert.Fail($"No tmcs.slnx in {AppContext.BaseDirectory} or any folder above it. The manifests are found from the test " +
+                        "output, so a --artifacts-path must stay inside the repository, for example artifacts/verify.");
         return XDocument.Load(Path.Combine(dir.FullName, "src", "Tmcs", fileName));
     }
 
