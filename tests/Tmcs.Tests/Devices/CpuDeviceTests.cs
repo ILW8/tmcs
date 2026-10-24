@@ -38,12 +38,20 @@ public class CpuDeviceTests
     }
 
     [Fact]
-    public void Failed_read_appends_nothing()
+    public void Failed_read_appends_nothing_and_keeps_latest_values()
     {
-        var cpu = new CpuDevice(new FakeCpuSource { Succeeds = false });
+        var fake = new FakeCpuSource { Total = 25, Performance = 98 };
+        var cpu = new CpuDevice(fake);
         cpu.Sample(10_000_000, [Proc(2, 10)]);
-        Assert.Equal(0, cpu.History.Count);
-        Assert.Equal(0, cpu.Processes);
+
+        fake.Succeeds = false;
+        fake.Total = 90;
+        cpu.Sample(20_000_000, [Proc(2, 10), Proc(3, 20)]);
+
+        Assert.Equal(1, cpu.History.Count);
+        Assert.Equal(25, cpu.Utilization);
+        Assert.Equal(4410, cpu.SpeedMhz, 6);
+        Assert.Equal(1, cpu.Processes);
     }
 
     [Fact]

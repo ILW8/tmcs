@@ -23,7 +23,9 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
     sealed class InstanceMap
     {
         char[][] _names = [];
-        int[] _processor = [];   // by array position: processor index, -1 for the machine total, -2 for anything else
+        /// <summary>Array position of the machine total (<c>_Total</c>), or -1.</summary>
+        public int TotalPosition { get; private set; } = -1;
+        int[] _processor = [];   // by array position: processor index, -1 for a total or anything unparsable
 
         public bool Matches(Pdh.CounterValueItem* items, int count)
         {
@@ -43,31 +45,19 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
         public void Build(Pdh.CounterValueItem* items, int count)
         {
             _names = new char[count][];
-            _processor = new int[count];
-            var keys = new List<(int Group, int Number, int Position)>(count);
+            var strings = new string[count];
             for (var i = 0; i < count; i++)
             {
-                _names[i] = new string(items[i].Name).ToCharArray();
-                _processor[i] = -2;
-                var span = _names[i].AsSpan();
-                if (span.SequenceEqual("_Total")) _processor[i] = -1;
-                else if (TryParse(span, out var group, out var number)) keys.Add((group, number, i));
+                strings[i] = new string(items[i].Name);
+                _names[i] = strings[i].ToCharArray();
             }
-            // PDH sorts the names as strings ("0,10" before "0,2"), so rank by (group, number).
-            keys.Sort((a, b) => a.Group != b.Group ? a.Group.CompareTo(b.Group) : a.Number.CompareTo(b.Number));
-            for (var rank = 0; rank < keys.Count; rank++) _processor[keys[rank].Position] = rank;
+            _processor = new int[count];
+            CpuInstanceNames.Rank(strings, _processor);
+            TotalPosition = Array.IndexOf(strings, "_Total");
         }
 
-        /// <summary>The processor index for the item at <paramref name="position"/>, -1 for the machine total, -2 to skip it.</summary>
+        /// <summary>The processor index for the item at <paramref name="position"/>, -1 for a total or anything unparsable.</summary>
         public int ProcessorAt(int position) => _processor[position];
-
-        /// <summary><c>group,number</c>. <c>_Total</c> and <c>group,_Total</c> don't parse.</summary>
-        static bool TryParse(ReadOnlySpan<char> name, out int group, out int number)
-        {
-            group = number = 0;
-            var comma = name.IndexOf(',');
-            return comma > 0 && int.TryParse(name[..comma], out group) && int.TryParse(name[(comma + 1)..], out number);
-        }
     }
 
     readonly nint _query;
@@ -125,7 +115,7 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
             ref var item = ref utilityItems[i];
             if (!IsValid(item.CStatus)) continue;
             var processor = _utilityMap.ProcessorAt(i);
-            if (processor == -1) totalUtility = Clamp(item.Value);
+            if (i == _utilityMap.TotalPosition) totalUtility = Clamp(item.Value);
             else if (processor >= 0 && processor < perProcessor.Length)
                 perProcessor[processor] = perProcessor[processor] with { Utility = (float)Clamp(item.Value) };
         }
@@ -138,7 +128,7 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
                 perProcessor[processor] = perProcessor[processor] with { Privileged = (float)Clamp(item.Value) };
         }
         // Above 100 when the processors boost, so only the lower end is clamped.
-        performancePercent = Math.Max(0, perf.Value);
+        performancePercent = double.IsNaN(perf.Value) ? 0 : Math.Max(0, perf.Value);
         return true;
     }
 
