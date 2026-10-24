@@ -62,7 +62,7 @@ Nobody watches a test run, so test mode never shows an error dialog. It writes t
 | 0 | The scenario ended, or you closed the window. |
 | 2 | `TMCS_SCENARIO` does not parse. Reported before any window appears. |
 | 3 | `TMCS_DIAG` is refused, before any window appears: it does not end in `.csv`, or it names an existing file whose first line is not the diagnostics header. tmcs writes nothing at all, not even the error file. |
-| 4 | The CSV cannot be read, created or written, for example because another program has it open or the folder is read-only. |
+| 4 | The CSV cannot be read, created or written, for example because another program has it locked or the folder is read-only. |
 | 5 | An unhandled exception, for example in a timer tick, ended the run. |
 
 ### Non-elevated soak (Debug build)
