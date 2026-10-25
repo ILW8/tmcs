@@ -34,7 +34,8 @@ internal sealed class PerformanceView : Control
         _panes = new PerformancePane[Enum.GetValues<DeviceKind>().Length];
         for (var i = 0; i < _panes.Length; i++)
         {
-            _panes[i] = new TitlePane(_fonts) { Visible = false };
+            _panes[i] = (DeviceKind)i == DeviceKind.Cpu ? new CpuPane(_fonts) : new TitlePane(_fonts);
+            _panes[i].Visible = false;
             Controls.Add(_panes[i]);
         }
 
