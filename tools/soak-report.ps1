@@ -11,17 +11,18 @@
         most 5 and the handles range at most 50. With fewer than 2 such rows these checks report SKIP.
 
     Same-state drift: a slow leak passes every segment on its own, so each state that occurs in more than one segment (done and
-    none aside) compares its first segment with each later one. The first segment's rows are those from -WarmupMinutes on, as
-    above; a later segment's rows are those from -SettleSeconds on, since a state switch settles fast. The later segment's
-    median may exceed the first's by at most: private bytes 6 MB, handles 8, gdi 5 and user 5 (the per-segment gdi and user
-    limits). A comparison where either side has fewer than -MinDriftRows rows reports SKIP as too short.
-      - Calibrated on the two M1 soaks (artifacts/soak/m1-debug.csv and m1-elevated.csv, whose scenarios repeat details). Their
-        later details segments drift 4.86 to 4.98 MB from the first at every warm-up from 2 to 9 minutes, but at most 0.04 MB
-        from each other. The 4.9 MB is not a leak: it is the garbage collector's second heap commit at about minute 12
-        (docs/superpowers/results/2026-10-23-m1-soak.md), after the first details segment ended at minute 10. The M2 scenario's
-        first cpu segment ends at minute 12 too. So the limit is 6 MB, the tightest that passes both M1 soaks with a 1 MB
-        margin. It can't catch 1 MB an hour while the first segment ends before the collector's last commit; measured from a
-        segment after that commit, the M1 data would support 1 MB.
+    none aside) compares its first segment with each later one. The first segment's rows are those in its last half by time,
+    and never a row before -WarmupMinutes; a later segment's rows are those from -SettleSeconds on, since a state switch settles
+    fast. The later segment's median may exceed the first's by at most: private bytes 1 MB, handles 8, gdi 5 and user 5 (the
+    per-segment gdi and user limits). A comparison where either side has fewer than -MinDriftRows rows reports SKIP as too
+    short.
+      - The first occurrence of a repeated state must start after the garbage collector's heap commit, which grows private bytes
+        by about 4.9 MB until about minute 12 (docs/superpowers/results/2026-10-23-m1-soak.md). The M2 scenario arranges it:
+        network:12 runs first, so the first cpu segment starts at minute 12. Taking only its last half also keeps a commit that
+        runs into the segment's first half out of the baseline. With the M1 order the drift row shows that commit: the M1 soaks
+        (artifacts/soak/m1-debug.csv and m1-elevated.csv) repeat details from minute 0, and their later details segments are
+        4.86 to 4.98 MB above the first.
+      - The 1 MB limit: the M1 soaks' later details segments are at most 0.04 MB from each other.
       - Handles drift -4 to +1 in the M1 soaks, and gdi and user -1 to 0. A limit of 8 handles passes them with 7 to spare and
         fails a leak of 9 or more.
     Whole run, after the table: the least-squares slopes of private bytes and handles per minute over every row after the first
@@ -72,7 +73,7 @@ $MaxSwitchMs = 100
 $MaxPrivateGrowth = 2MB
 $MaxGuiRange = 5
 $MaxHandlesRange = 50
-$MaxPrivateDrift = 6MB
+$MaxPrivateDrift = 1MB
 $MaxHandlesDrift = 8
 $Invariant = [cultureinfo]::InvariantCulture
 
@@ -137,6 +138,12 @@ function Get-RowsFrom([object] $Segment, [double] $Seconds) {
     @($Segment.Rows | Where-Object { ($_.Utc - $start).TotalSeconds -ge $Seconds })
 }
 
+# The drift baseline: the last half of the segment by time, and never a row before -WarmupMinutes.
+function Get-BaselineRows([object] $Segment) {
+    $half = ($Segment.Rows[$Segment.Rows.Count - 1].Utc - $Segment.Rows[0].Utc).TotalSeconds / 2
+    Get-RowsFrom $Segment ([math]::Max($half, $WarmupMinutes * 60))
+}
+
 function Test-Checked([object] $Segment) { $Segment.Step -notin 'done', 'none' }
 
 foreach ($segment in $segments) {
@@ -190,7 +197,7 @@ $drifts = @(
     @{ Name = 'user'; Property = 'User'; Max = $MaxGuiRange; Unit = 1; Suffix = ''; Format = '0.#' })
 foreach ($group in @($segments | Where-Object { Test-Checked $_ } | Group-Object Step | Where-Object Count -GT 1)) {
     $firstSegment = $group.Group[0]
-    $baseline = Get-RowsFrom $firstSegment ($WarmupMinutes * 60)
+    $baseline = Get-BaselineRows $firstSegment
     foreach ($later in @($group.Group | Select-Object -Skip 1)) {
         $settled = Get-RowsFrom $later $SettleSeconds
         foreach ($drift in $drifts) {

@@ -136,6 +136,7 @@ public sealed class NetworkDeviceTests
         Assert.False(source.Changed);
     }
 
+    // Needs WlanSvc running, or it fails: there is no CI, and xUnit 2.9.3 has no dynamic skip.
     [Fact]
     public unsafe void Real_wlan_handle_is_reopened_after_the_service_drops_it()
     {

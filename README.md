@@ -105,10 +105,20 @@ pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m1-elevated.csv
 
 ### Reading the report
 
-`soak-report.ps1` splits the CSV into segments of consecutive rows with the same step and prints one row per check: PASS, FAIL or SKIP. It exits with code 0 when no check fails and 1 otherwise.
+`soak-report.ps1` splits the CSV into segments of consecutive rows with the same step and prints one row per check: PASS, FAIL or SKIP, or INFO for a value that is not a check. It exits with code 0 when no check fails and 1 otherwise.
 
 For every scenario segment (rows with the step `none` or `done` are skipped), switching into it must take at most 100 ms, which also catches a stall after restoring from minimized. A `paused` segment must take no samples. After a 2-minute warm-up (`-WarmupMinutes`), private bytes may grow by at most 2 MB, GDI and USER objects may vary by at most 5, and handles by at most 50. A segment too short to have two rows after warm-up reports SKIP for those checks.
 
 With the default 2-minute warm-up, segment 1 of a soak FAILs the private-bytes check: the GC commits its heap over about the first 12 minutes, as [docs/superpowers/results/2026-10-23-m1-soak.md](docs/superpowers/results/2026-10-23-m1-soak.md) records. Judge leaks by the later segments, or score with `-WarmupMinutes 6`.
+
+A slow leak passes every segment on its own, so a state that occurs in more than one segment is also checked for drift. Each later segment of the state is compared with the first by median: private bytes may be at most 1 MB higher, handles at most 8, and GDI and USER objects at most 5. The first segment counts the rows in its last half, and never a row before the warm-up. A later segment counts its rows from `-SettleSeconds` on (default 30). With fewer than `-MinDriftRows` rows (default 6, one minute) on either side, the comparison reports SKIP.
+
+A heap commit still growing when the first segment's baseline starts shows as drift, so the first segment of a repeated state must start after the GC's heap commit. The M2 scenario starts with `network:12`, so its first `cpu` segment starts at minute 12. The M1 scenarios repeat `details` from minute 0, so their drift rows FAIL by the size of that commit, about 4.9 MB.
+
+Below the table, the report prints the least-squares slopes of private bytes (KB per minute) and handles (per minute) over every row after segment 1. They are for the record and are not scored.
+
+When the CSV has the `devices` column, the number of devices must stay the same over the whole run. The check lists each change with its time, since every change must be explained.
+
+When the CSV has the `gpu_instances` column, the report lists its minimum and maximum in each sampling segment, one whose `samples` advance. Leaked PDH instances raise the floor, so the minimum of each later sampling segment may be at most `-GpuTouchInstances` (default 13, the instances one gpu-touch process adds) above the first one's, which is an INFO row. Over all sampling rows, the range must be at least `-GpuTouchInstances`, which shows that instances come and go. Without these columns, as in the M1 logs, their checks report SKIP.
 
 The design is in [docs/superpowers/specs/2026-10-23-tmcs-design.md](docs/superpowers/specs/2026-10-23-tmcs-design.md).
