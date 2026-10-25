@@ -118,7 +118,16 @@ internal static partial class User32
     /// <summary><c>HDF_SORTUP</c>.</summary>
     public const int HdfSortUp = 0x400;
 
-    /// <summary><c>MF_STRING</c> (0), <c>MF_BYCOMMAND</c> (0) and <c>MF_ENABLED</c> (0) are the defaults these build on.</summary>
+    /// <summary>
+    /// <c>MF_STRING</c>: the item is text. <c>MF_STRING</c>, <see cref="MfByCommand"/> and <c>MF_ENABLED</c> are all 0, the
+    /// defaults the other flags build on.
+    /// </summary>
+    public const uint MfString = 0x0;
+
+    /// <summary><c>MF_BYCOMMAND</c>: the item is named by its command id, which also searches submenus.</summary>
+    public const uint MfByCommand = 0x0;
+
+    /// <summary><c>MF_GRAYED</c>.</summary>
     public const uint MfGrayed = 0x1;
 
     /// <summary><c>MF_CHECKED</c>. <c>MF_UNCHECKED</c> is 0.</summary>
@@ -358,6 +367,19 @@ internal static partial class User32
     [LibraryImport("user32.dll", EntryPoint = "AppendMenuW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool AppendMenu(nint menu, uint flags, nuint id, string? text);
+
+    /// <summary>
+    /// Replaces an item. Its kind, state, id and text all come from the arguments, so a check mark or gray state that
+    /// <paramref name="flags"/> doesn't repeat is cleared.
+    /// </summary>
+    /// <param name="menu">The menu that holds the item, or one of its ancestors.</param>
+    /// <param name="item">The item's command id with <see cref="MfByCommand"/>.</param>
+    /// <param name="flags">The <c>MF_</c> flags: how <paramref name="item"/> names the item, and the new item's kind and state.</param>
+    /// <param name="id">The new command id: pass the same one to keep it.</param>
+    /// <param name="text">The new text.</param>
+    [LibraryImport("user32.dll", EntryPoint = "ModifyMenuW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ModifyMenu(nint menu, uint item, uint flags, nuint id, string? text);
 
     /// <returns>The item's previous state, or -1 when the item does not exist.</returns>
     [LibraryImport("user32.dll")]

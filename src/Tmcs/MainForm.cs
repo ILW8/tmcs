@@ -102,6 +102,7 @@ internal class MainForm : Form, IScenarioTarget
         _performance = new PerformanceModel(services.Devices);
 
         _performanceView = new PerformanceView(_performance, _settings) { Dock = DockStyle.Fill };
+        _performanceView.SettingsChanged += (_, _) => ScheduleSave();
         _performancePage = new TabPage("Performance");
         _performancePage.Controls.Add(_performanceView);
         _details = new DetailsView(_table, _images, _settings) { Dock = DockStyle.Fill };

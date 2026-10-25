@@ -60,6 +60,13 @@ internal sealed class NativeMenu : IDisposable
     /// <summary>Checks or clears the item with command id <paramref name="id"/>, here or in a submenu.</summary>
     public void SetChecked(int id, bool isChecked) => User32.CheckMenuItem(Handle, (uint)id, isChecked ? User32.MfChecked : 0);
 
+    /// <summary>
+    /// Replaces the text of the item with command id <paramref name="id"/>. The item is replaced as a whole, which clears its
+    /// check mark and gray state: set those after the text.
+    /// </summary>
+    public void SetText(int id, string text) =>
+        User32.ModifyMenu(Handle, (uint)id, User32.MfByCommand | User32.MfString, (nuint)id, text);
+
     /// <summary>Gives the item <paramref name="id"/> a radio check mark and clears the other items from <paramref name="first"/> to <paramref name="last"/>, all in this menu.</summary>
     public void CheckRadio(int first, int last, int id) => User32.CheckMenuRadioItem(Handle, (uint)first, (uint)last, (uint)id, 0);
 

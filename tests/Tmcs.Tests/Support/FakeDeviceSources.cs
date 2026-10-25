@@ -23,6 +23,25 @@ internal static class FakeDeviceSources
         new FakeNetworkSource { Adapters = [Adapter(A, 1), Adapter(B, 2)], Counters = new(0, 0, IsUp: true) },
         new FakeGpuSource { Gpus = [Gpu(0x1D8C7)] });
 
+    /// <summary>
+    /// The owner's machine, as the sidebar tests need it: disks 0 to 4 (<c>C:</c> to <c>G:</c>), 12 wired adapters (<see cref="A"/>,
+    /// <see cref="B"/> and <see cref="C"/> first, then <see cref="OwnerAdapterGuid"/> 4 to 12, LUID n for adapter n), and one GPU
+    /// with LUID 0x1D8C7.
+    /// </summary>
+    public static DeviceSources CreateOwnerMachine() => new(
+        new FakeCpuSource(),
+        new FakeMemorySource(),
+        new FakeDiskSource { Disks = [.. Enumerable.Range(0, 5).Select(n => Disk(n, (char)('C' + n) + ":"))] },
+        new FakeNetworkSource { Adapters = OwnerAdapters(), Counters = new(0, 0, IsUp: true) },
+        new FakeGpuSource { Gpus = [Gpu(0x1D8C7)] });
+
+    /// <summary>The 12 adapters of <see cref="CreateOwnerMachine"/>, in order.</summary>
+    public static AdapterInfo[] OwnerAdapters() =>
+        [Adapter(A, 1), Adapter(B, 2), Adapter(C, 3), .. Enumerable.Range(4, 9).Select(n => Adapter(OwnerAdapterGuid(n), (ulong)n))];
+
+    /// <summary>Adapter n's interface GUID for n from 4: <c>0000000n-0000-…</c>.</summary>
+    static Guid OwnerAdapterGuid(int n) => new(n, 0, 0, new byte[8]);
+
     public static DiskInfo Disk(int number, string letters) => new(number, letters, "Fake SSD", 1_000_000_000_000, 999_000_000_000, letters == "C:", false, "SSD");
 
     public static AdapterInfo Adapter(Guid guid, ulong luid, string ipv4 = "10.0.0.2") =>

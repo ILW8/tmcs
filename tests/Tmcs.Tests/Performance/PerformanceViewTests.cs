@@ -25,10 +25,14 @@ public sealed class PerformanceViewTests
             View.ClientSize = new Size(1278, 623);
         }
 
-        /// <summary>The view, then the pane that shows, at its place in the view.</summary>
+        /// <summary>The view, then the sidebar and the pane that shows, each at its place in the view.</summary>
         public void Paint(Graphics g)
         {
             View.PaintTo(g);
+            var sidebar = View.Sidebar;
+            g.TranslateTransform(sidebar.Location.X, sidebar.Location.Y);
+            sidebar.PaintTo(g, sidebar.ClientRectangle);
+            g.ResetTransform();
             var pane = View.VisiblePane;
             g.TranslateTransform(pane.Location.X, pane.Location.Y);
             pane.PaintTo(g);
@@ -78,6 +82,7 @@ public sealed class PerformanceViewTests
         using var rig = new Rig();
 
         Assert.Equal(new Rectangle(4, 7, 214, 568), rig.View.SidebarSlot);
+        Assert.Equal(rig.View.SidebarSlot, rig.View.Sidebar.Bounds);
         Assert.Equal(new Rectangle(226, 0, 1052, 575), rig.View.VisiblePane.Bounds);
         Assert.All(rig.View.Panes, p => Assert.Equal(new Rectangle(226, 0, 1052, 575), p.Bounds));
 
@@ -99,23 +104,29 @@ public sealed class PerformanceViewTests
         var view = rig.View;
 
         Assert.Equal(Enum.GetValues<DeviceKind>().Length, view.Panes.Count);
-        Assert.Equal("cpu", view.SelectedKey);
+        Assert.Equal("cpu", view.Sidebar.SelectedKey);
         Assert.Same(rig.Model.Cpu, view.VisiblePane.Device);
         Assert.Single(view.Panes, p => p.Visible);
+        Assert.All(view.Panes, p => Assert.True(p == view.VisiblePane || p.Device is null));
 
         var disk = rig.Model.Devices.Single(d => d.Key == "disk:4");
-        view.Select("disk:4");
+        var cpuPane = view.VisiblePane;
+        Assert.True(view.Sidebar.SelectKey("disk:4"));
 
-        Assert.Equal("disk:4", view.SelectedKey);
+        Assert.Equal("disk:4", view.Sidebar.SelectedKey);
         Assert.Same(disk, view.VisiblePane.Device);
         Assert.True(view.VisiblePane.Visible);
         Assert.Single(view.Panes, p => p.Visible);
+        Assert.Null(cpuPane.Device); // a hidden pane holds no device
 
         var otherDisk = rig.Model.Devices.Single(d => d.Key == "disk:0");
         var diskPane = view.VisiblePane;
-        view.Select("disk:0");
+        Assert.True(view.Sidebar.SelectKey("disk:0"));
         Assert.Same(diskPane, view.VisiblePane); // reused for every device of its kind
         Assert.Same(otherDisk, diskPane.Device);
+
+        Assert.False(view.Sidebar.SelectKey("disk:9"));
+        Assert.Equal("disk:0", view.Sidebar.SelectedKey);
     });
 
     [Fact]
@@ -169,6 +180,7 @@ public sealed class PerformanceViewTests
             Assert.NotSame(before, view.Fonts); // recreated on the change
             Assert.Throws<ArgumentException>(() => oldTitle.GetHeight()); // and the old ones disposed
             Assert.All(view.Panes, p => Assert.Same(view.Fonts, p.Fonts));
+            Assert.Same(view.Fonts, view.Sidebar.Fonts);
             Assert.Equal(42f, view.Fonts.Title.Size);
             // Scaled once (about 1.5×), not twice (2.25×). GDI hints every glyph, so the ratio isn't exact: 53 px becomes 78 at 18 px.
             var at144 = PaneText.Width("Utilization", view.Fonts.Label);
@@ -228,6 +240,8 @@ public sealed class PerformanceViewTests
         rig.View.ApplyDpi(144);
 
         Assert.Equal(new Rectangle(6, 11, 321, 623 - 83), rig.View.SidebarSlot);
+        Assert.Equal(rig.View.SidebarSlot, rig.View.Sidebar.Bounds);
+        Assert.Equal(new Size(0, 2 * 90 + 2 * 99 + 2 * 99 + 99), rig.View.Sidebar.AutoScrollMinSize); // the entries at 1.5×
         Assert.Equal(new Rectangle(339, 0, 1278 - 339, 623 - 72), rig.View.VisiblePane.Bounds);
     });
 
@@ -235,9 +249,17 @@ public sealed class PerformanceViewTests
     public void Painting_creates_no_gdi_or_user_objects() => Sta.Run(() =>
     {
         using var rig = new Rig();
-        using var bmp = new Bitmap(1278, 623);
-        using var g = Graphics.FromImage(bmp);
+        // A buffer on a memory DC, as OnPaint gets: text drawn on a bitmap's Graphics copies the bitmap for every run, which
+        // took these paints from 1 s to 17 s once the sidebar's text was in them.
+        using var bmp = new Bitmap(1, 1);
+        using var target = Graphics.FromImage(bmp);
+        using var context = new BufferedGraphicsContext();
+        using var buffer = context.Allocate(target, new Rectangle(0, 0, 1278, 623));
+        var g = buffer.Graphics;
         rig.Paint(g);
+        // Objects earlier tests left to the finalizer are released here, not inside the counted paints.
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
         var gdi = GuiResources(0);
         var user = GuiResources(1);
 
@@ -257,14 +279,16 @@ public sealed class PerformanceViewTests
 
         foreach (var kind in Enum.GetValues<DeviceKind>())
         {
-            rig.View.Select(rig.Model.Devices.First(d => d.Kind == kind).Key);
+            Assert.True(rig.View.Sidebar.SelectFirst(kind));
             Assert.Equal(kind, rig.View.VisiblePane.Device!.Kind);
             foreach (var size in sizes)
             {
                 rig.View.ClientSize = size;
+                rig.View.Sidebar.ClientSize = size;
                 foreach (var pane in rig.View.Panes) pane.ClientSize = size;
 
                 rig.View.PaintTo(g);
+                rig.View.Sidebar.PaintTo(g, rig.View.Sidebar.ClientRectangle);
                 foreach (var pane in rig.View.Panes) pane.PaintTo(g);
             }
         }

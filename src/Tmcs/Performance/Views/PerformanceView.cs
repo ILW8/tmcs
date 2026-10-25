@@ -4,29 +4,32 @@ using Tmcs.Settings;
 namespace Tmcs.Performance.Views;
 
 /// <summary>
-/// The Performance tab: the sidebar slot, a divider, and one pane per <see cref="DeviceKind"/>, all created at startup, of
-/// which only the selected device's shows. Geometry is Task Manager's (look reference section 1) with the origin at its tab
-/// content, in 96-DPI units scaled by the fonts' DPI. The bottom 48 px stay white and empty: "Fewer details" and "Open
-/// Resource Monitor" are out of scope, and keeping the band keeps the pane as tall as Task Manager's.
+/// The Performance tab: the sidebar, a divider, and one pane per <see cref="DeviceKind"/>, all created at startup, of which only
+/// the pane of the device selected in the sidebar shows. Geometry is Task Manager's (look reference section 1) with the origin
+/// at its tab content, in 96-DPI units scaled by the fonts' DPI. The bottom 48 px stay white and empty: "Fewer details" and
+/// "Open Resource Monitor" are out of scope, and keeping the band keeps the pane as tall as Task Manager's.
 /// </summary>
 internal sealed class PerformanceView : Control
 {
-    readonly PerformanceModel _model;
+    readonly Sidebar _sidebar;
     readonly PerformancePane[] _panes;
     readonly SolidBrush _divider = new(Color.FromArgb(0xD9, 0xD9, 0xD9));
     PaneFonts _fonts;
     PerformancePane _visible;
 
-    /// <param name="model">The devices the panes show.</param>
-    /// <param name="settings">Unused until the sidebar, which keeps the hidden adapters there.</param>
-    // ReSharper disable once UnusedParameter.Local
+    /// <param name="model">The devices the sidebar lists and the panes show.</param>
+    /// <param name="settings">Where the sidebar keeps the hidden adapters.</param>
     public PerformanceView(PerformanceModel model, AppSettings settings)
     {
-        _model = model;
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.ResizeRedraw, true);
         BackColor = Color.White;
         _fonts = new PaneFonts(DeviceDpi);
+
+        _sidebar = new Sidebar(model, settings, _fonts);
+        _sidebar.SelectionChanged += ShowSelected;
+        _sidebar.SettingsChanged += (_, e) => SettingsChanged?.Invoke(this, e);
+        Controls.Add(_sidebar);
 
         _panes = new PerformancePane[Enum.GetValues<DeviceKind>().Length];
         for (var i = 0; i < _panes.Length; i++)
@@ -36,13 +39,16 @@ internal sealed class PerformanceView : Control
         }
 
         _visible = _panes[(int)DeviceKind.Cpu];
-        Select(model.Cpu.Key);
+        ShowSelected();
     }
 
-    /// <summary>The selected device's key. Starts at <c>cpu</c>.</summary>
-    public string SelectedKey { get; private set; } = "";
+    /// <summary>Raised after the sidebar's Hide changed <see cref="AppSettings.HiddenAdapters"/>.</summary>
+    public event EventHandler? SettingsChanged;
 
     public PaneFonts Fonts => _fonts;
+
+    /// <summary>The device list, which owns the selection.</summary>
+    internal Sidebar Sidebar => _sidebar;
 
     /// <summary>Where the sidebar goes: (4, 7, 214, height − 55).</summary>
     internal Rectangle SidebarSlot =>
@@ -53,48 +59,30 @@ internal sealed class PerformanceView : Control
 
     internal PerformancePane VisiblePane => _visible;
 
-    /// <summary>Shows the device with <paramref name="key"/> in its kind's pane; an unknown key shows the CPU.</summary>
-    public void Select(string key)
+    /// <summary>Repaints what shows from the current histories: the sidebar and the visible pane, nothing else.</summary>
+    public void RefreshVisible()
     {
-        Device device = _model.Cpu;
-        foreach (var d in _model.Devices)
-        {
-            if (d.Key != key) continue;
-            device = d;
-            break;
-        }
-
-        SelectedKey = device.Key;
-        var pane = _panes[(int)device.Kind];
-        pane.Device = device;
-        if (pane != _visible)
-        {
-            _visible.Visible = false;
-            _visible = pane;
-        }
-
-        pane.Visible = true;
+        _sidebar.Invalidate();
+        _visible.Invalidate();
     }
-
-    /// <summary>Repaints what shows from the current histories: the visible pane, nothing else.</summary>
-    public void RefreshVisible() => _visible.Invalidate();
 
     /// <summary>
     /// Replaces the fonts when <paramref name="dpi"/> differs from theirs: disposes the old ones, creates new ones, and lays out
-    /// and repaints the panes at the new scale.
+    /// and repaints the sidebar and the panes at the new scale.
     /// </summary>
     internal void ApplyDpi(int dpi)
     {
         if (dpi == _fonts.Dpi) return;
         var old = _fonts;
         _fonts = new PaneFonts(dpi);
+        _sidebar.Fonts = _fonts;
         foreach (var pane in _panes) pane.Fonts = _fonts;
         old.Dispose();
         LayOut();
         Invalidate(invalidateChildren: true);
     }
 
-    /// <summary>The background and the divider; the panes paint themselves.</summary>
+    /// <summary>The background and the divider; the sidebar and the panes paint themselves.</summary>
     internal void PaintTo(Graphics g)
     {
         var size = ClientSize;
@@ -133,15 +121,35 @@ internal sealed class PerformanceView : Control
 
     protected override void Dispose(bool disposing)
     {
-        base.Dispose(disposing); // the panes first: they paint with the fonts
+        base.Dispose(disposing); // the sidebar and the panes first: they paint with the fonts
         if (!disposing) return;
         _fonts.Dispose();
         _divider.Dispose();
     }
 
-    /// <summary>Every pane at (226, 0, width − 226, height − 48).</summary>
+    /// <summary>
+    /// Shows the sidebar's selection in its kind's pane, on every selection change, including the one a rescan or a hide makes.
+    /// The other panes let go of their device, so no pane keeps one the model dropped.
+    /// </summary>
+    void ShowSelected()
+    {
+        var device = _sidebar.Selected;
+        var pane = _panes[(int)device.Kind];
+        if (pane != _visible)
+        {
+            _visible.Visible = false;
+            _visible.Device = null;
+            _visible = pane;
+        }
+
+        pane.Device = device;
+        pane.Visible = true;
+    }
+
+    /// <summary>The sidebar in its slot, and every pane at (226, 0, width − 226, height − 48).</summary>
     void LayOut()
     {
+        _sidebar.Bounds = SidebarSlot;
         var size = ClientSize;
         var x = _fonts.Scale(226);
         var bounds = new Rectangle(x, 0, Math.Max(0, size.Width - x), Math.Max(0, size.Height - _fonts.Scale(48)));
