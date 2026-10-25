@@ -17,11 +17,12 @@
     per-segment gdi and user limits). A comparison where either side has fewer than -MinDriftRows rows reports SKIP as too
     short.
       - The first occurrence of a repeated state must start after the garbage collector's heap commit, which grows private bytes
-        by about 4.9 MB until about minute 12 (docs/superpowers/results/2026-10-23-m1-soak.md). The M2 scenario arranges it:
-        network:12 runs first, so the first cpu segment starts at minute 12. Taking only its last half also keeps a commit that
-        runs into the segment's first half out of the baseline. With the M1 order the drift row shows that commit: the M1 soaks
-        (artifacts/soak/m1-debug.csv and m1-elevated.csv) repeat details from minute 0, and their later details segments are
-        4.86 to 4.98 MB above the first.
+        by about 4.9 MB until about minute 12 (docs/superpowers/results/2026-10-23-m1-soak.md), and after the first showing of
+        every view, whose window and painting objects are made once. The M2 scenario arranges both: a three-minute tour
+        (details:1,gpu:1,minimized:1) shows each view once, then network:12 runs, so the first cpu segment starts at minute 15.
+        Taking only its last half also keeps a commit that runs into the segment's first half out of the baseline. With the M1
+        order the drift row shows that commit: the M1 soaks (artifacts/soak/m1-debug.csv and m1-elevated.csv) repeat details from
+        minute 0, and their later details segments are 4.86 to 4.98 MB above the first.
       - The 1 MB limit: the M1 soaks' later details segments are at most 0.04 MB from each other.
       - Handles drift -4 to +1 in the M1 soaks, and gdi and user -1 to 0. A limit of 8 handles passes them with 7 to spare and
         fails a leak of 9 or more.
@@ -197,9 +198,9 @@ $drifts = @(
     @{ Name = 'user'; Property = 'User'; Max = $MaxGuiRange; Unit = 1; Suffix = ''; Format = '0.#' })
 foreach ($group in @($segments | Where-Object { Test-Checked $_ } | Group-Object Step | Where-Object Count -GT 1)) {
     $firstSegment = $group.Group[0]
-    $baseline = Get-BaselineRows $firstSegment
+    $baseline = @(Get-BaselineRows $firstSegment) # @(): a function returning no rows gives $null, which has no Count
     foreach ($later in @($group.Group | Select-Object -Skip 1)) {
-        $settled = Get-RowsFrom $later $SettleSeconds
+        $settled = @(Get-RowsFrom $later $SettleSeconds)
         foreach ($drift in $drifts) {
             $check = "$($drift.Name) drift vs seg $($firstSegment.Index)"
             if ($baseline.Count -lt $MinDriftRows -or $settled.Count -lt $MinDriftRows) {
