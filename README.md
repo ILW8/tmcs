@@ -42,7 +42,15 @@ The soak checks that tmcs does not leak while processes start and exit continuou
 Test mode is switched on by environment variables, not command-line flags (tmcs ignores its arguments):
 
 - `TMCS_DIAG` is the path of the CSV to write, and must end in `.csv`. Setting it turns test mode on.
-- `TMCS_SCENARIO` is optional and is used only in test mode. It is a list of `action:minutes` steps separated by commas, for example `details:10,minimized:30,details:3,paused:5,details:2`. The actions are `details` (restored, Details tab, sampling), `minimized` (minimized, sampling) and `paused` (restored, paused). Minutes may be fractional.
+- `TMCS_SCENARIO` is optional and is used only in test mode. It is a list of `action:minutes` steps separated by commas, for example `details:10,minimized:30,cpu:3,paused:5,details:2`. Minutes may be fractional. Each action sets the whole state, whatever the step before left:
+  - `details`: restored, on the Details tab, sampling.
+  - `cpu`: restored, on the Performance tab's CPU pane, sampling.
+  - `network`: restored, on the pane of the first network adapter the sidebar lists (never a hidden one), sampling.
+  - `gpu`: restored, on GPU 0's pane, sampling.
+  - `minimized`: minimized, sampling.
+  - `paused`: restored, on the CPU pane, paused.
+
+  A `network` or `gpu` step on a PC whose sidebar lists no such device ends the run with code 5.
 
 Set them for the tmcs process only. tmcs removes both from its own environment when it starts, so the processes it starts do not inherit them.
 
@@ -67,38 +75,35 @@ Nobody watches a test run, so test mode never shows an error dialog. It writes t
 
 ### Non-elevated soak (Debug build)
 
-Start the churn in one terminal. It runs for the given minutes, then prints how many processes it started:
+Start the churn in one terminal. It runs for the given minutes, then prints how many processes it started. `-GpuParallel 2` also keeps two `gpu-touch` processes running; each creates a Direct3D 11 device for half a second, so the GPU's per-process counter instances come and go too. Build it first. One churn serves both soaks below: its 95 minutes cover the 78-minute scenario of each, with time to accept the elevated soak's UAC prompt.
 
 ```
 dotnet build -c Debug
-pwsh -File tools/churn.ps1 -Parallel 8 -Minutes 52
+dotnet build tools/gpu-touch -c Release
+pwsh -File tools/churn.ps1 -Parallel 8 -GpuParallel 2 -Minutes 95
 ```
 
-In another, run tmcs with the variables set for that process only. Piping to `Out-Null` makes the command wait until tmcs exits (this scenario takes 50 minutes):
+In another, run tmcs with the variables set for that process only. Piping to `Out-Null` makes the command wait until tmcs exits (this scenario takes 78 minutes):
 
 ```
-pwsh -NoProfile -Command '$env:TMCS_DIAG = "$PWD/artifacts/soak/m1-debug.csv"; $env:TMCS_SCENARIO = "details:10,minimized:30,details:3,paused:5,details:2"; & ./src/Tmcs/bin/Debug/net10.0-windows/win-x64/tmcs.exe | Out-Null'
+pwsh -NoProfile -Command '$env:TMCS_DIAG = "$PWD/artifacts/soak/m2-debug.csv"; $env:TMCS_SCENARIO = "details:1,gpu:1,minimized:1,network:12,cpu:12,gpu:12,details:12,minimized:12,cpu:3,paused:10,cpu:2"; & ./src/Tmcs/bin/Debug/net10.0-windows/win-x64/tmcs.exe | Out-Null'
 ```
 
 Then check the log:
 
 ```
-pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m1-debug.csv
+pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m2-debug.csv
 ```
 
 ### Elevated soak (published build)
 
-Run the published exe the same way, with churn running for the whole scenario (here 30 minutes, so 32 minutes of churn):
-
-```
-pwsh -File tools/churn.ps1 -Parallel 8 -Minutes 32
-```
+Run the published exe the same way, while the churn runs. Start it within about 15 minutes of the churn, so the churn lasts the whole scenario.
 
 A UAC-elevated process does not inherit your environment variables, so the wrapper starts an elevated `pwsh` that sets them itself and then starts tmcs. This shows one UAC prompt:
 
 ```
-Start-Process pwsh -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "`$env:TMCS_DIAG='$PWD\artifacts\soak\m1-elevated.csv'; `$env:TMCS_SCENARIO='details:10,minimized:10,details:3,paused:5,details:2'; & '$PWD\artifacts\publish\tmcs.exe' | Out-Null"
-pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m1-elevated.csv
+Start-Process pwsh -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "`$env:TMCS_DIAG='$PWD\artifacts\soak\m2-elevated.csv'; `$env:TMCS_SCENARIO='details:1,gpu:1,minimized:1,network:12,cpu:12,gpu:12,details:12,minimized:12,cpu:3,paused:10,cpu:2'; & '$PWD\artifacts\publish\tmcs.exe' | Out-Null"
+pwsh -File tools/soak-report.ps1 -Csv artifacts/soak/m2-elevated.csv
 ```
 
 `-Wait` holds the prompt until the elevated `pwsh`, and so tmcs, has exited, so the report reads the finished log.
