@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Tmcs.Details;
+using Tmcs.Devices;
 using Tmcs.Diagnostics;
 using Tmcs.Icons;
 using Tmcs.Native;
@@ -278,9 +279,12 @@ internal class MainForm : Form, IScenarioTarget
 
     /// <summary>
     /// A scenario step, done synchronously so the runner's stopwatch covers what a user would wait for: the restore with its view
-    /// step and the speed change. Unpaused is always Normal. The window is never activated, and after a restore it is sunk again,
-    /// since restoring can raise it.
+    /// step, the tab and pane switch, and the speed change. Unpaused is always Normal. A Performance step ends by painting the
+    /// view, so the stopwatch covers the repaint too. The window is never activated, and after a restore it is sunk again, since
+    /// restoring can raise it.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The sidebar lists no device of the step's kind: no adapter, or no GPU. The soak
+    /// must not hold another pane in its place, and test mode ends on it.</exception>
     void IScenarioTarget.Apply(ScenarioAction a)
     {
         if (a == ScenarioAction.Minimized)
@@ -297,8 +301,27 @@ internal class MainForm : Form, IScenarioTarget
             SinkToBottom();
         }
 
-        _tabs.ShowPage(_detailsPage);
+        if (a == ScenarioAction.Details)
+        {
+            _tabs.ShowPage(_detailsPage);
+            _clock.Speed = UpdateSpeed.Normal;
+            return;
+        }
+
+        // Paused pauses on the CPU pane: the Performance tab is where a view could keep working while paused.
+        var kind = a switch
+        {
+            ScenarioAction.Cpu or ScenarioAction.Paused => DeviceKind.Cpu,
+            ScenarioAction.Network => DeviceKind.Network,
+            ScenarioAction.Gpu => DeviceKind.Gpu,
+            _ => throw new ArgumentOutOfRangeException(nameof(a), a, null),
+        };
+        _tabs.ShowPage(_performancePage);
         _clock.Speed = a == ScenarioAction.Paused ? UpdateSpeed.Paused : UpdateSpeed.Normal;
+        // The first listed of its kind: hidden adapters are not listed, and GPUs are listed from GPU 0.
+        if (!_performanceView.Sidebar.SelectFirst(kind))
+            throw new InvalidOperationException($"The scenario step {ScenarioParser.Name(a)} needs a {kind} device, and the sidebar lists none.");
+        _performanceView.Update();
     }
 
     /// <summary>Minimizes the window without activating it. Tests pin the minimized position off-screen.</summary>

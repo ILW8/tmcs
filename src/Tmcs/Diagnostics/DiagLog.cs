@@ -13,7 +13,7 @@ namespace Tmcs.Diagnostics;
 internal sealed class DiagLog : IDisposable
 {
     public const string Header =
-        "utc,step,samples,rows,icon_slots,icon_live,icon_pooled,sid_cache,private_bytes,managed_bytes,handles,gdi,user,cpu_ms,switch_ms";
+        "utc,step,samples,rows,icon_slots,icon_live,icon_pooled,sid_cache,private_bytes,managed_bytes,handles,gdi,user,cpu_ms,switch_ms,devices,gpu_instances";
 
     /// <summary>Milliseconds between rows.</summary>
     public const int IntervalMs = 10_000;
@@ -71,7 +71,7 @@ internal sealed class DiagLog : IDisposable
     {
         var utc = s.Utc.Kind == DateTimeKind.Local ? s.Utc.ToUniversalTime() : DateTime.SpecifyKind(s.Utc, DateTimeKind.Utc);
         return string.Create(CultureInfo.InvariantCulture,
-            $"{utc:O},{s.Step},{s.Samples},{s.Rows},{s.IconSlots},{s.IconLive},{s.IconPooled},{s.SidCache},{s.PrivateBytes},{s.ManagedBytes},{s.Handles},{s.Gdi},{s.User},{s.CpuMs},{s.SwitchMs}");
+            $"{utc:O},{s.Step},{s.Samples},{s.Rows},{s.IconSlots},{s.IconLive},{s.IconPooled},{s.SidCache},{s.PrivateBytes},{s.ManagedBytes},{s.Handles},{s.Gdi},{s.User},{s.CpuMs},{s.SwitchMs},{s.Devices},{s.GpuInstances}");
     }
 
     /// <summary>Stops the timer and closes the file. The timer itself is the caller's to dispose.</summary>

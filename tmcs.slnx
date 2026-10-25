@@ -5,4 +5,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Tmcs.Tests/Tmcs.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/gpu-touch/GpuTouch.csproj" />
+  </Folder>
 </Solution>
