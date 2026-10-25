@@ -321,7 +321,10 @@ internal class MainForm : Form, IScenarioTarget
         // The first listed of its kind: hidden adapters are not listed, and GPUs are listed from GPU 0.
         if (!_performanceView.Sidebar.SelectFirst(kind))
             throw new InvalidOperationException($"The scenario step {ScenarioParser.Name(a)} needs a {kind} device, and the sidebar lists none.");
+        // Update is only documented to paint its own window, so the sidebar and the pane, child windows, are painted too.
         _performanceView.Update();
+        _performanceView.Sidebar.Update();
+        _performanceView.VisiblePane.Update();
     }
 
     /// <summary>Minimizes the window without activating it. Tests pin the minimized position off-screen.</summary>
