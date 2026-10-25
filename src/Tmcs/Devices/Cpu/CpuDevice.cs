@@ -22,6 +22,19 @@ internal sealed class CpuDevice(ICpuSource source) : Device("cpu", DeviceKind.Cp
 
     public override void Sample(long time100Ns, IReadOnlyList<RawProcess> snapshot)
     {
+        // These come from the snapshot and the boot time, not PDH, so a failed PDH read doesn't freeze them. The snapshot's entry
+        // count includes System Idle Process, as every system source does.
+        int threads = 0, handles = 0;
+        for (var i = 0; i < snapshot.Count; i++)
+        {
+            threads += snapshot[i].Threads;
+            handles += snapshot[i].Handles;
+        }
+        Processes = snapshot.Count;
+        Threads = threads;
+        Handles = handles;
+        UpTime = source.UpTime();
+
         if (!source.Read(_loads, out var total, out var performance)) return;
 
         _values[0] = (float)total;
@@ -34,17 +47,5 @@ internal sealed class CpuDevice(ICpuSource source) : Device("cpu", DeviceKind.Cp
 
         Utilization = total;
         SpeedMhz = performance * Info.BaseMhz / 100;
-
-        // The snapshot's entry count includes System Idle Process, as every system source does.
-        int threads = 0, handles = 0;
-        for (var i = 0; i < snapshot.Count; i++)
-        {
-            threads += snapshot[i].Threads;
-            handles += snapshot[i].Handles;
-        }
-        Processes = snapshot.Count;
-        Threads = threads;
-        Handles = handles;
-        UpTime = source.UpTime();
     }
 }

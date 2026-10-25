@@ -199,9 +199,12 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
             // D3DKMT_ADAPTER_PERFDATA: PhysicalAdapterIndex u32 @0 (in), Temperature u32 @56 in tenths of a degree.
             new Span<long>(buffer, _perfData.Length).Clear();
             if (!QueryAdapter(handle, Gdi32.KmtqaiAdapterPerfData, buffer, Gdi32.AdapterPerfDataSize)) return null;
-            return *(uint*)((byte*)buffer + 56) / 10f;
+            return Temperature(*(uint*)((byte*)buffer + 56));
         }
     }
+
+    /// <summary>In °C from tenths of a degree. A driver that answers 0 doesn't support it, and Task Manager hides the row: null.</summary>
+    internal static float? Temperature(uint tenths) => tenths == 0 ? null : tenths / 10f;
 
     static void PrepareStatistics(byte* buffer, int type, long luid)
     {

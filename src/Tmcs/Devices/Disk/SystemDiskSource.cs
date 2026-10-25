@@ -21,6 +21,7 @@ internal sealed unsafe class SystemDiskSource : IDiskSource
     const uint StorageDeviceSeekPenaltyProperty = 7;
 
     const int PerformanceSize = 88;     // sizeof(DISK_PERFORMANCE)
+    const int ErrorNotReady = 21;
     const int ErrorMoreData = 234;
     const uint Share = Kernel32.FileShareRead | Kernel32.FileShareWrite;
 
@@ -41,6 +42,10 @@ internal sealed unsafe class SystemDiskSource : IDiskSource
         {
             using var handle = Kernel32.CreateFileW(path, 0, Share, 0, Kernel32.OpenExisting, 0, 0);
             if (handle.IsInvalid || !TryDeviceNumber(handle, out var number) || paths.ContainsKey(number)) continue;
+
+            var model = ReadModel(handle, out var removable);
+            var geometryRead = ReadCapacity(handle, out var capacity, out var error);
+            if (!HasMedia(geometryRead, error, capacity, removable)) continue;
             paths[number] = path;
 
             volumes.TryGetValue(number, out var volume);
@@ -48,8 +53,8 @@ internal sealed unsafe class SystemDiskSource : IDiskSource
             disks.Add(new DiskInfo(
                 Number: number,
                 Letters: string.Join(' ', letters),
-                Model: ReadModel(handle, out var removable),
-                Capacity: ReadCapacity(handle),
+                Model: model,
+                Capacity: capacity,
                 Formatted: volume?.Formatted ?? 0,
                 IsSystem: systemLetter != null && letters.Contains(systemLetter),
                 HasPageFile: letters.Any(pageFileLetters.Contains),
@@ -172,14 +177,30 @@ internal sealed unsafe class SystemDiskSource : IDiskSource
         return Kernel32.DeviceIoControl(handle, IoctlStorageQueryProperty, query, 12, output, outputSize, out _, 0);
     }
 
-    static long ReadCapacity(SafeFileHandle handle)
+    /// <summary>The disk's size in <paramref name="capacity"/>, else 0 and the Win32 error in <paramref name="error"/>.</summary>
+    static bool ReadCapacity(SafeFileHandle handle, out long capacity, out int error)
     {
         // DISK_GEOMETRY_EX: a 24-byte DISK_GEOMETRY, then DiskSize. IOCTL_DISK_GET_LENGTH_INFO would need read access.
         byte* buffer = stackalloc byte[256];
-        return Kernel32.DeviceIoControl(handle, IoctlDiskGetDriveGeometryEx, null, 0, buffer, 256, out _, 0)
-            ? *(long*)(buffer + 24)
-            : 0;
+        capacity = 0;
+        error = 0;
+        if (!Kernel32.DeviceIoControl(handle, IoctlDiskGetDriveGeometryEx, null, 0, buffer, 256, out _, 0))
+        {
+            error = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            return false;
+        }
+        capacity = *(long*)(buffer + 24);
+        return true;
     }
+
+    /// <summary>
+    /// False for a slot with no media in it, such as a card reader's, which Task Manager doesn't list. Only a definite signal
+    /// counts: the geometry reads a size of 0, or fails with ERROR_NOT_READY on removable media. Any other failure (a disk
+    /// spinning up, a sharing violation during a format) keeps the disk listed: hidden, it would stay hidden until the next
+    /// device change.
+    /// </summary>
+    internal static bool HasMedia(bool geometryRead, int error, long size, bool removableMedia) =>
+        geometryRead ? size != 0 : error != ErrorNotReady || !removableMedia;
 
     /// <param name="systemLetter">The drive letter of the Windows directory, e.g. <c>C:</c>.</param>
     /// <returns>Each disk's letters and formatted size, from the extents of every volume.</returns>

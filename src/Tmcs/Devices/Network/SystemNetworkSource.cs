@@ -18,6 +18,7 @@ internal sealed unsafe class SystemNetworkSource : INetworkSource
     const ushort AfUnspecFamily = 0;
     const ushort AfInet = 2;
     const ushort AfInet6 = 23;
+    const uint ErrorInvalidHandle = 6;
 
     // Allocated once; Read must not allocate.
     readonly byte[] _row = GC.AllocateArray<byte>(IfRowSize, pinned: true);
@@ -42,6 +43,9 @@ internal sealed unsafe class SystemNetworkSource : INetworkSource
     }
 
     public bool Changed => _changed || _registrationFailed;
+
+    /// <summary>The WLAN client handle, 0 until a read opens it. For tests.</summary>
+    internal nint WlanHandle => _wlan;
 
     [UnmanagedCallersOnly]
     static void OnChange(void* context, void* row, uint notificationType)
@@ -145,7 +149,14 @@ internal sealed unsafe class SystemNetworkSource : INetworkSource
         uint size;
         void* data;
         int valueType;
-        if (WlanApi.WlanQueryInterface(_wlan, &interfaceGuid, WlanApi.OpcodeCurrentConnection, null, &size, &data, &valueType) != 0) return null;
+        var error = WlanApi.WlanQueryInterface(_wlan, &interfaceGuid, WlanApi.OpcodeCurrentConnection, null, &size, &data, &valueType);
+        if (error == ErrorInvalidHandle)
+        {
+            // WlanSvc restarted, which invalidates every client handle: the next read opens a new one.
+            WlanApi.WlanCloseHandle(_wlan, null);
+            _wlan = 0;
+        }
+        if (error != 0) return null;
         try
         {
             var attributes = (byte*)data;

@@ -1,4 +1,5 @@
 using Tmcs.Devices.Network;
+using Tmcs.Native;
 
 namespace Tmcs.Tests.Devices;
 
@@ -133,5 +134,23 @@ public sealed class NetworkDeviceTests
         Assert.True(source.Changed);
         source.Enumerate();
         Assert.False(source.Changed);
+    }
+
+    [Fact]
+    public unsafe void Real_wlan_handle_is_reopened_after_the_service_drops_it()
+    {
+        using var source = new SystemNetworkSource();
+        var unknown = Guid.NewGuid();
+        Assert.Null(source.ReadWifi(unknown));     // opens the handle; no interface has this GUID
+        var stale = source.WlanHandle;
+        Assert.NotEqual(0, stale);
+
+        // A WlanSvc restart invalidates every client handle; closing it behind the source's back does the same.
+        WlanApi.WlanCloseHandle(stale, null);
+        Assert.Null(source.ReadWifi(unknown));
+        Assert.Equal(0, source.WlanHandle);
+
+        Assert.Null(source.ReadWifi(unknown));
+        Assert.NotEqual(0, source.WlanHandle);
     }
 }

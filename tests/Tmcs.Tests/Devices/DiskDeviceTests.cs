@@ -110,6 +110,17 @@ public sealed class DiskDeviceTests
         Assert.Equal(1, disk.History.Count);
     }
 
+    [Theory]
+    [InlineData(true, 0, 1_000_000_000_000L, false, true)]
+    [InlineData(true, 0, 0L, true, false)]               // the geometry says no media
+    [InlineData(true, 0, 0L, false, false)]
+    [InlineData(false, 21, 0L, true, false)]             // ERROR_NOT_READY on removable media: an empty card-reader slot
+    [InlineData(false, 21, 0L, false, true)]             // a fixed disk spinning up
+    [InlineData(false, 32, 0L, true, true)]              // ERROR_SHARING_VIOLATION, e.g. during a format
+    [InlineData(false, 1, 0L, false, true)]
+    public void Only_a_definite_no_media_signal_hides_a_disk(bool geometryRead, int error, long size, bool removable, bool listed) =>
+        Assert.Equal(listed, SystemDiskSource.HasMedia(geometryRead, error, size, removable));
+
     [Fact]
     public void Real_listing_has_one_system_disk()
     {

@@ -51,7 +51,23 @@ public class CpuDeviceTests
         Assert.Equal(1, cpu.History.Count);
         Assert.Equal(25, cpu.Utilization);
         Assert.Equal(4410, cpu.SpeedMhz, 6);
-        Assert.Equal(1, cpu.Processes);
+    }
+
+    [Fact]
+    public void Failed_read_still_takes_the_counts_from_the_snapshot()
+    {
+        var fake = new FakeCpuSource();
+        var cpu = new CpuDevice(fake);
+        cpu.Sample(10_000_000, [Proc(2, 10)]);
+
+        fake.Succeeds = false;
+        fake.Up = TimeSpan.FromHours(3);
+        cpu.Sample(20_000_000, [Proc(2, 10), Proc(3, 20)]);
+
+        Assert.Equal(2, cpu.Processes);
+        Assert.Equal(5, cpu.Threads);
+        Assert.Equal(30, cpu.Handles);
+        Assert.Equal(TimeSpan.FromHours(3), cpu.UpTime);
     }
 
     [Fact]

@@ -58,6 +58,13 @@ public sealed class GpuDeviceTests(ITestOutputHelper output)
         Assert.Null(gpu.TemperatureText);
     }
 
+    [Theory]
+    [InlineData(0u, null)]
+    [InlineData(1u, 0.1f)]
+    [InlineData(425u, 42.5f)]
+    public void Temperature_of_0_is_unsupported(uint tenths, float? celsius) =>
+        Assert.Equal(celsius, SystemGpuSource.Temperature(tenths));
+
     [Fact]
     public void Corrupt_adapter_counts_read_as_none()
     {
