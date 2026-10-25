@@ -5,8 +5,8 @@ namespace Tmcs.Performance.Views;
 
 /// <summary>
 /// The Disk pane: the Active time graph, the Disk transfer rate graph below it, and the info block (look reference sections 4, 6
-/// and 7). The transfer-rate graph is a fixed 67 px tall and Active time takes the height that is left, down to 80 px, below
-/// which the pane scrolls. Everything comes from the device on every paint, and painting creates no GDI object.
+/// and 7). The transfer-rate graph is a fixed 67 px tall and Active time takes the height that is left. No code floors it at 80 px: that
+/// follows from <see cref="ContentHeight"/>, below which the pane scrolls. Everything comes from the device on every paint, and painting creates no GDI object.
 /// </summary>
 internal sealed class DiskPane : PerformancePane
 {
@@ -44,6 +44,12 @@ internal sealed class DiskPane : PerformancePane
     internal InfoLayout BuildInfo() =>
         Device is DiskDevice disk ? BuildInfo(disk) : InfoLayout.Rows([], [], _labelWidth, _valueWidth);
 
+    /// <summary>The transfer graph's scale, from the larger of the visible read and write rates; default without a disk device.</summary>
+    internal (float Max, string Caption) TransferScale => Device is DiskDevice disk ? ScaleOf(disk) : default;
+
+    static (float Max, string Caption) ScaleOf(DiskDevice disk) =>
+        GraphScales.Disk(Math.Max(disk.History.MaxVisible(1), disk.History.MaxVisible(2)));
+
     protected override void PaintBody(Graphics g)
     {
         if (Device is not DiskDevice disk) return;
@@ -55,7 +61,7 @@ internal sealed class DiskPane : PerformancePane
         _painter.Paint(g, active, history, 0, 100, 3);
 
         var transfer = Transfer(info);
-        var scale = GraphScales.Disk(Math.Max(history.MaxVisible(1), history.MaxVisible(2)));
+        var scale = ScaleOf(disk);
         Captions(g, transfer, "Disk transfer rate", scale.Caption, bottom: true);
         _painter.Paint(g, transfer, history, 1, scale.Max, 3, second: 2);
 

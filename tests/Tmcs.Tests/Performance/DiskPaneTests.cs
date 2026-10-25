@@ -180,8 +180,17 @@ public sealed class DiskPaneTests
 
         Assert.True(inked);
         Assert.True(differs);
-        Assert.Equal("10 MB/s", Tmcs.Performance.GraphScales.Disk(rig.Disk.History.MaxVisible(2)).Caption);
-        Assert.Equal("100 KB/s", Tmcs.Performance.GraphScales.Disk(idle.Disk.History.MaxVisible(2)).Caption);
+        const float TenMib = 10 * 1024 * 1024;
+        Assert.Equal(("10 MB/s", TenMib), (rig.Pane.TransferScale.Caption, rig.Pane.TransferScale.Max));
+        Assert.Equal(("100 KB/s", 100 * 1024f), (idle.Pane.TransferScale.Caption, idle.Pane.TransferScale.Max));
+
+        using var reading = new Rig();
+        reading.Sample();
+        reading.Sample(read: (long)(1.3 * Mib));
+        Assert.Equal(("10 MB/s", TenMib), (reading.Pane.TransferScale.Caption, reading.Pane.TransferScale.Max));
+
+        reading.Pane.Device = null;
+        Assert.Equal(default, reading.Pane.TransferScale);
     });
 
     [Fact]
