@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Tmcs.Devices;
 using Tmcs.Devices.Cpu;
 using Tmcs.Devices.Disk;
@@ -71,40 +72,79 @@ internal sealed class PerformanceModel : IDisposable
             DevicesChanged?.Invoke();
         }
 
-        Cpu.Sample(time100Ns, snapshot);
-        Memory.Sample(time100Ns, snapshot);
+        // A source that throws breaks its contract, but costs only its own device's point: the others still sample.
+        try { Cpu.Sample(time100Ns, snapshot); }
+        catch (Exception e) { Report("CPU read", e); }
+        try { Memory.Sample(time100Ns, snapshot); }
+        catch (Exception e) { Report("memory read", e); }
 
-        // A failed read means the device is gone or changed: its kind is listed again at the start of the next sample.
+        // A failed read means the device is gone or changed, and so does one that threw: its kind is listed again at the start
+        // of the next sample.
         for (var i = 0; i < _disks.Count; i++)
         {
-            _disks[i].Sample(time100Ns, snapshot);
-            if (_disks[i].Failed) _rescanDisks = true;
+            try
+            {
+                _disks[i].Sample(time100Ns, snapshot);
+                if (_disks[i].Failed) _rescanDisks = true;
+            }
+            catch (Exception e)
+            {
+                Report("disk read", e);
+                _rescanDisks = true;
+            }
         }
         for (var i = 0; i < _adapters.Count; i++)
         {
-            _adapters[i].Sample(time100Ns, snapshot);
-            if (_adapters[i].Failed) _rescanAdapters = true;
+            try
+            {
+                _adapters[i].Sample(time100Ns, snapshot);
+                if (_adapters[i].Failed) _rescanAdapters = true;
+            }
+            catch (Exception e)
+            {
+                Report("adapter read", e);
+                _rescanAdapters = true;
+            }
         }
 
-        if (_sources.Gpu.ReadAll(_gpuCounters))
+        try
         {
-            for (var i = 0; i < _gpus.Count; i++) _gpus[i].Accept(_gpuCounters[i], time100Ns);
+            if (_sources.Gpu.ReadAll(_gpuCounters))
+            {
+                for (var i = 0; i < _gpus.Count; i++) _gpus[i].Accept(_gpuCounters[i], time100Ns);
+            }
+            else if (_gpus.Count > 0)
+            {
+                // With no GPU listed there is nothing to rescan: the real source lists none when its counter can't open, and a
+                // rescan every tick would run the SetupAPI enumeration every tick.
+                _rescanGpus = true;
+            }
         }
-        else if (_gpus.Count > 0)
+        catch (Exception e)
         {
-            // With no GPU listed there is nothing to rescan: the real source lists none when its counter can't open, and a
-            // rescan every tick would run the SetupAPI enumeration every tick.
+            Report("GPU read", e);
             _rescanGpus = true;
         }
     }
 
     public void Dispose() => _sources.Dispose();
 
+    // A listing that throws keeps the kind's devices as they are and sets its flag again, so the next sample retries it. A
+    // listing that keeps throwing is retried every sample.
+
     bool RescanDisks()
     {
         _rescanDisks = false;
         var source = _sources.Disks;
-        return Rescan(_disks, source.Enumerate(), (d, info) => d.Info.Number == info.Number,
+        IReadOnlyList<DiskInfo> listed;
+        try { listed = source.Enumerate(); }
+        catch (Exception e)
+        {
+            Report("disk listing", e);
+            _rescanDisks = true;
+            return false;
+        }
+        return Rescan(_disks, listed, (d, info) => d.Info.Number == info.Number,
             info => new DiskDevice(source, info), (d, info) => d.Update(info));
     }
 
@@ -112,18 +152,36 @@ internal sealed class PerformanceModel : IDisposable
     {
         _rescanAdapters = false;
         var source = _sources.Network;
-        return Rescan(_adapters, source.Enumerate(), (a, info) => a.Info.InterfaceGuid == info.InterfaceGuid,
+        IReadOnlyList<AdapterInfo> listed;
+        try { listed = source.Enumerate(); }
+        catch (Exception e)
+        {
+            Report("adapter listing", e);
+            _rescanAdapters = true;
+            return false;
+        }
+        return Rescan(_adapters, listed, (a, info) => a.Info.InterfaceGuid == info.InterfaceGuid,
             info => new NetworkDevice(source, info), (a, info) => a.Update(info));
     }
 
     bool RescanGpus()
     {
         _rescanGpus = false;
-        var changed = Rescan(_gpus, _sources.Gpu.Enumerate(), (g, info) => g.Info.Luid == info.Luid,
+        IReadOnlyList<GpuInfo> listed;
+        try { listed = _sources.Gpu.Enumerate(); }
+        catch (Exception e)
+        {
+            Report("GPU listing", e);
+            _rescanGpus = true;
+            return false;
+        }
+        var changed = Rescan(_gpus, listed, (g, info) => g.Info.Luid == info.Luid,
             info => new GpuDevice(info), (g, info) => g.Update(info));
         if (_gpuCounters.Length != _gpus.Count) _gpuCounters = new GpuCounters[_gpus.Count];
         return changed;
     }
+
+    static void Report(string what, Exception e) => Debug.WriteLine($"PerformanceModel: a {what} threw: {e}");
 
     /// <summary>
     /// Refills <paramref name="devices"/> in the listing's order. A device whose key is still listed is kept and given the new

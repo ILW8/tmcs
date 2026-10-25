@@ -10,11 +10,16 @@ internal sealed class FakeMemorySource : IMemorySource
     public MemoryInfo Info { get; set; } = new(64 * Gib + 713 * (1L << 19), 64 * Gib, 5600, 2, 4, "DIMM");
     public MemoryCounters Counters { get; set; }
     public bool Succeeds { get; set; } = true;
+
+    /// <summary>Makes every read throw, as a source breaking its contract would.</summary>
+    public bool Throws { get; set; }
+
     public int Reads { get; private set; }
 
     public bool Read(out MemoryCounters counters)
     {
         Reads++;
+        if (Throws) throw new InvalidOperationException("fake memory read");
         counters = Counters;
         return Succeeds;
     }

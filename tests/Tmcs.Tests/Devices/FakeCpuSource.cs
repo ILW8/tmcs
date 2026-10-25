@@ -14,12 +14,17 @@ internal sealed class FakeCpuSource(CpuInfo info) : ICpuSource
     public double Total { get; set; }
     public double Performance { get; set; } = 100;
     public bool Succeeds { get; set; } = true;
+
+    /// <summary>Makes every read throw, as a source breaking its contract would.</summary>
+    public bool Throws { get; set; }
+
     public TimeSpan Up { get; set; } = TimeSpan.FromSeconds(5);
     public int Reads { get; private set; }
 
     public bool Read(Span<CpuLoad> perProcessor, out double totalUtility, out double performancePercent)
     {
         Reads++;
+        if (Throws) throw new InvalidOperationException("fake CPU read");
         totalUtility = Total; performancePercent = Performance;
         if (!Succeeds) return false;
         Loads.CopyTo(perProcessor);

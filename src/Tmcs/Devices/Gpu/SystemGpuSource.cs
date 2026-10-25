@@ -72,10 +72,11 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
         var kept = new List<Adapter>();
         if (!_disposed && _counter != 0)
         {
-            var listed = ListAdapters();
+            Gdi32.AdapterInfo[] listed = [];
             var i = 0;
             try
             {
+                listed = ListAdapters();
                 List<DisplayDevice>? devices = null;
                 for (; i < listed.Length; i++)
                 {
@@ -92,12 +93,15 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
                     kept.Add(new Adapter(handle, luid, segments, info.NodeEngines));    // last, so a throw leaves it to the catch
                 }
             }
-            catch
+            catch (Exception e)
             {
-                // Every listed handle is open: close the kept ones and those not reached yet.
+                // A source never throws on the tick path, so this lists no GPU. Every listed handle is open: close the kept ones
+                // and those not reached yet. The old ones close below, as the listing replaces them.
+                Debug.WriteLine($"SystemGpuSource: listing the GPUs threw; none is listed. {e}");
                 foreach (var a in kept) Close(a.Handle);
                 for (; i < listed.Length; i++) Close(listed[i].Adapter);
-                throw;
+                kept.Clear();
+                gpus.Clear();
             }
         }
 
@@ -262,13 +266,13 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
         fixed (char* p = chars)
             name = QueryAdapter(handle, Gdi32.KmtqaiDriverDescription, p, chars.Length * sizeof(char)) ? Terminated(chars) : "";
 
-        // D3DKMT_QUERYSTATISTICS_ADAPTER_INFORMATION: NbSegments u32 @0, NodeCount u32 @4.
         var statistics = stackalloc long[Gdi32.QueryStatisticsSize / 8];
         var b = (byte*)statistics;
         PrepareStatistics(b, Gdi32.QueryStatisticsAdapter, luid);
-        var ok = Gdi32.D3DKMTQueryStatistics(b) >= 0;
-        segments = ok ? *(int*)(b + Gdi32.QueryStatisticsResult) : 0;
-        var nodes = ok ? *(int*)(b + Gdi32.QueryStatisticsResult + 4) : 0;
+        var (segmentCount, nodes) = Gdi32.D3DKMTQueryStatistics(b) >= 0
+            ? AdapterCounts(new ReadOnlySpan<byte>(b + Gdi32.QueryStatisticsResult, 8))
+            : (0, 0);
+        segments = segmentCount;
 
         var engines = new GpuEngine[nodes];
         var metadata = stackalloc byte[Gdi32.NodeMetadataSize];
@@ -327,6 +331,13 @@ internal sealed unsafe class SystemGpuSource : IGpuSource
             DirectX: ReadDirectX(handle, chars),
             Location: device?.Location ?? "");
     }
+
+    /// <summary>
+    /// <c>D3DKMT_QUERYSTATISTICS_ADAPTER_INFORMATION</c>: NbSegments u32 @0, NodeCount u32 @4. A count past
+    /// <see cref="int.MaxValue"/> is corrupt and counts as none, rather than sizing an array with it.
+    /// </summary>
+    internal static (int Segments, int Nodes) AdapterCounts(ReadOnlySpan<byte> information) =>
+        (Math.Max(0, MemoryMarshal.Read<int>(information)), Math.Max(0, MemoryMarshal.Read<int>(information[4..])));
 
     /// <summary><c>HardwareInformation.qwMemorySize</c> in the adapter's driver key; 0 when it can't be read.</summary>
     static long ReadPhysicalMemorySize(uint handle, char[] chars)

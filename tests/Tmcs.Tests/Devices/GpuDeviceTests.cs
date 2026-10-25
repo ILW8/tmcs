@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Tmcs.Devices;
 using Tmcs.Devices.Gpu;
 using Xunit.Abstractions;
@@ -55,6 +56,19 @@ public sealed class GpuDeviceTests(ITestOutputHelper output)
 
         gpu.Accept(new GpuCounters(0, 0, 0, 0, 0, 0, 0, null), 2 * Second);
         Assert.Null(gpu.TemperatureText);
+    }
+
+    [Fact]
+    public void Corrupt_adapter_counts_read_as_none()
+    {
+        Span<byte> information = stackalloc byte[8];
+        BinaryPrimitives.WriteInt32LittleEndian(information, 3);
+        BinaryPrimitives.WriteUInt32LittleEndian(information[4..], 0x8000_0005);
+        Assert.Equal((3, 0), SystemGpuSource.AdapterCounts(information));
+
+        BinaryPrimitives.WriteUInt32LittleEndian(information, uint.MaxValue);
+        BinaryPrimitives.WriteInt32LittleEndian(information[4..], 9);
+        Assert.Equal((0, 9), SystemGpuSource.AdapterCounts(information));
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using Tmcs.Devices;
 using Tmcs.Devices.Disk;
 using Tmcs.Devices.Network;
 using Tmcs.Performance;
@@ -184,6 +185,75 @@ public sealed class PerformanceModelTests
         // With no GPU listed a failed read has nothing to rescan, so the GPUs are listed only by the constructor.
         Assert.Equal(1, sources.FakeGpu().Enumerations);
     }
+
+    [Theory]
+    [InlineData("Cpu")]
+    [InlineData("Memory")]
+    [InlineData("Disk")]
+    [InlineData("Network")]
+    [InlineData("Gpu")]
+    public void A_throwing_read_leaves_the_others_sampling_and_rescans_its_kind(string kindName)
+    {
+        var kind = Enum.Parse<DeviceKind>(kindName);
+        var sources = FakeDeviceSources.Create();
+        using var model = new PerformanceModel(sources);
+        switch (kind)
+        {
+            case DeviceKind.Cpu: sources.FakeCpu().Throws = true; break;
+            case DeviceKind.Memory: sources.FakeMemory().Throws = true; break;
+            case DeviceKind.Disk: sources.FakeDisks().Throws = true; break;
+            case DeviceKind.Network: sources.FakeNetwork().Throws = true; break;
+            case DeviceKind.Gpu: sources.FakeGpu().Throws = true; break;
+        }
+
+        model.Sample(Second, Snapshot);
+
+        Assert.All(model.Devices, d => Assert.Equal(d.Kind == kind ? 0 : 1, d.History.Count));
+        Assert.Equal((1, 1, 1), Enumerations(sources));
+
+        model.Sample(2 * Second, Snapshot);
+
+        // CPU and Memory are always there, so only the other kinds are listed again.
+        var expected = kind switch
+        {
+            DeviceKind.Disk => (2, 1, 1),
+            DeviceKind.Network => (1, 2, 1),
+            DeviceKind.Gpu => (1, 1, 2),
+            _ => (1, 1, 1),
+        };
+        Assert.Equal(expected, Enumerations(sources));
+        Assert.All(model.Devices, d => Assert.Equal(d.Kind == kind ? 0 : 2, d.History.Count));
+    }
+
+    [Fact]
+    public void A_throwing_listing_keeps_the_devices_and_is_retried()
+    {
+        var sources = FakeDeviceSources.Create();
+        using var model = new PerformanceModel(sources);
+        var listed = Keys(model);
+        var (disks, network, gpu) = (sources.FakeDisks(), sources.FakeNetwork(), sources.FakeGpu());
+        disks.ListingThrows = network.ListingThrows = gpu.ListingThrows = true;
+        model.MarkDevicesChanged();
+        network.Changed = true;
+
+        model.Sample(Second, Snapshot);
+        model.Sample(2 * Second, Snapshot);
+
+        Assert.Equal(listed, Keys(model));
+        Assert.All(model.Devices, d => Assert.Equal(2, d.History.Count));
+        Assert.Equal((3, 3, 3), Enumerations(sources));
+
+        // Once the listing works again, it is not retried.
+        disks.ListingThrows = network.ListingThrows = gpu.ListingThrows = false;
+        model.Sample(3 * Second, Snapshot);
+        model.Sample(4 * Second, Snapshot);
+
+        Assert.Equal((4, 4, 4), Enumerations(sources));
+        Assert.Equal(listed, Keys(model));
+    }
+
+    static (int Disks, int Network, int Gpu) Enumerations(DeviceSources sources) =>
+        (sources.FakeDisks().Enumerations, sources.FakeNetwork().Enumerations, sources.FakeGpu().Enumerations);
 
     [Fact]
     public void Steady_sampling_does_not_allocate()
