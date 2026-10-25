@@ -35,6 +35,12 @@ internal sealed class CpuPane : PerformancePane
         _valueWidth = ValueWidth;
     }
 
+    /// <summary>
+    /// Task Manager's CPU content with the chart at its 80-px minimum: caption row 53 + chart 80 + 10 + info 145 + 20 (look
+    /// reference section 8). A shorter pane scrolls rather than squash the grid.
+    /// </summary>
+    public override int ContentHeight => 308;
+
     /// <summary>The info block for the device shown; empty without a CPU.</summary>
     internal InfoLayout BuildInfo() => Device is CpuDevice cpu ? BuildInfo(cpu) : InfoLayout.Rows([], [], _labelWidth, _valueWidth);
 

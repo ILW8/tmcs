@@ -79,6 +79,46 @@ public sealed class CpuPaneTests
         Assert.Equal(new Rectangle(903, 309, 123, 76), rig.Pane.CellBounds(31));
     });
 
+    /// <summary>Shows the rig's pane in an off-screen form, so that its scrollbar is real.</summary>
+    static OffscreenForm Host(Rig rig, int height)
+    {
+        var form = new OffscreenForm { ClientSize = new Size(1052, height) };
+        rig.Pane.Bounds = new Rectangle(0, 0, 1052, height);
+        form.Controls.Add(rig.Pane);
+        form.ShowOffscreen();
+        return form;
+    }
+
+    [Fact]
+    public void Short_pane_scrolls_with_task_managers_minimum_grid() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        using var form = Host(rig, 257);
+        var pane = rig.Pane;
+
+        Assert.True(pane.VerticalScroll.Visible);
+        Assert.Equal(1011, pane.ContentRight); // the scrollbar narrows the client by 17
+        Assert.Equal(new Rectangle(21, 69, 120, 9), pane.CellBounds(0));
+        Assert.Equal(new Rectangle(21, 82, 120, 9), pane.CellBounds(8));
+        Assert.Equal(new Rectangle(21, 95, 120, 9), pane.CellBounds(16));
+        Assert.Equal(new Rectangle(21, 108, 120, 10), pane.CellBounds(24));
+        Assert.Equal(new Rectangle(889, 69, 120, 9), pane.CellBounds(7));
+        Assert.Equal(new Rectangle(889, 108, 120, 10), pane.CellBounds(31));
+        Assert.Equal(143, pane.InfoBottom - pane.BuildInfo().Height);
+    });
+
+    [Fact]
+    public void Scrolls_only_below_the_minimum_height() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        using var form = Host(rig, 308);
+        Assert.False(rig.Pane.VerticalScroll.Visible);
+
+        rig.Pane.Height = 307;
+        Application.DoEvents();
+        Assert.True(rig.Pane.VerticalScroll.Visible);
+    });
+
     [Fact]
     public void Grid_shape_for_other_counts() => Sta.Run(() =>
     {
