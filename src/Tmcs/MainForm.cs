@@ -199,10 +199,15 @@ internal class MainForm : Form, IScenarioTarget
         _clock.RefreshNow();
     }
 
-    /// <summary>Test mode: once shown without activation, the window goes to the bottom of the z-order, then the scenario starts.</summary>
+    /// <summary>
+    /// Once shown, the views it hides get their windows: the Details tab and every pane but the visible one. WinForms makes a
+    /// hidden control's window on its first show, and the Details list's took the first switch to Details past 100 ms under load.
+    /// Test mode then sends the window to the bottom of the z-order and starts the scenario, whose first step finds them made.
+    /// </summary>
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        CreateWindows(_tabs);
         if (_harness is null) return;
         SinkToBottom();
         _harness.Start();
@@ -373,6 +378,13 @@ internal class MainForm : Form, IScenarioTarget
             .AddPopup("&Options", NativeMenu.Popup(("&Always on top", CommandIds.AlwaysOnTop)))
             .AddPopup("&View", NativeMenu.Popup(("&Refresh now", CommandIds.RefreshNow)).AddPopup("&Update speed", speed));
         return (bar, speed);
+    }
+
+    /// <summary>Makes the windows of <paramref name="control"/> and everything in it, shown or not, each parent before its children.</summary>
+    private static void CreateWindows(Control control)
+    {
+        _ = control.Handle;
+        foreach (Control child in control.Controls) CreateWindows(child);
     }
 
     private static int LoWord(nint value) => (int)(value & 0xFFFF);

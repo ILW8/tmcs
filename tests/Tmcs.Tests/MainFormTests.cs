@@ -276,6 +276,23 @@ public sealed partial class MainFormTests : IDisposable
     });
 
     [Fact]
+    public void Hidden_views_have_their_windows_once_the_form_has_shown() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+
+        var details = rig.Form.Details;
+        var list = (ListView)details.Controls.Cast<Control>().Single();
+        Assert.False(details.Visible);
+        Assert.True(list.IsHandleCreated, "the Details list has no window yet");
+        Assert.All(rig.Form.PerformanceView.Panes, p => Assert.True(p.IsHandleCreated, $"{p.GetType().Name} has no window yet"));
+
+        SelectTab(rig.Form, "Details");
+        Application.DoEvents();
+        Assert.Equal(3, list.VirtualListSize); // the list made early shows the rows like one made on first show
+    });
+
+    [Fact]
     public void Panes_repaint_only_while_visible() => Sta.Run(() =>
     {
         using var rig = new Rig(SettingsPath);
