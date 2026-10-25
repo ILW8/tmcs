@@ -23,6 +23,17 @@ public class HistoryTests
       Assert.Equal(41 * 10_000_000L, h.TimeAt(h.FirstVisible));
       Assert.Equal(60, h.Count - h.FirstVisible); } // Task Manager's 60 samples
 
+    // F5 pressed 100 times in 0.1 s after 121 s at Normal speed. The points from 1 s to 61 s can go, and the rest replace the
+    // newest point, so the line still enters at the left border.
+    [Fact] public void Quick_refreshes_keep_the_window_covered()
+    { var h = Filled(121, 10_000_000);
+      for (var k = 1; k <= 100; k++) h.Add(121 * 10_000_000L + k * 10_000, [k]);
+      Assert.Equal(History.Capacity, h.Count);
+      Assert.True(h.TimeAt(h.FirstVisible) <= h.LatestTime - History.Window100Ns, "the line no longer reaches the left border");
+      Assert.Equal(121 * 10_000_000L + 100 * 10_000, h.LatestTime); Assert.Equal(100f, h.ValueAt(0, h.Count - 1));
+      Assert.Equal(60f, h.ValueAt(0, h.Count - 2)); Assert.Equal(121f, h.ValueAt(0, h.Count - 62)); // 60 presses kept, then 121 s
+      Assert.Equal(181, h.SequenceAt(h.Count - 1)); } // 121 + 61 appended: a replaced point keeps its sequence
+
     [Fact] public void First_visible_is_0_when_history_is_shorter_than_the_window()
     { Assert.Equal(0, Filled(10, 10_000_000).FirstVisible); }
 

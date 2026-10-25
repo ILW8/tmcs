@@ -45,6 +45,11 @@ internal sealed class History
         }
     }
 
+    /// <summary>
+    /// Adds a point after the newest. When the ring is full, the oldest point goes only if the one after it is at or before
+    /// the window's left edge, so the line still enters at the left border. Otherwise the new point replaces the newest,
+    /// which keeps its sequence: quick refreshes never push the left of the graph out.
+    /// </summary>
     public void Add(long time100Ns, ReadOnlySpan<float> values)
     {
         if (values.Length != SeriesCount)
@@ -52,12 +57,12 @@ internal sealed class History
         if (Count > 0 && time100Ns <= LatestTime) return;
 
         int slot;
-        if (Count < Capacity) slot = Slot(Count++);
-        else { slot = _head; _head = (_head + 1) % Capacity; }
+        if (Count < Capacity) { slot = Slot(Count++); _added++; }
+        else if (TimeAt(1) <= time100Ns - Window100Ns) { slot = _head; _head = (_head + 1) % Capacity; _added++; }
+        else slot = Slot(Count - 1);
 
         _times[slot] = time100Ns;
         for (var s = 0; s < SeriesCount; s++) _values[s * Capacity + slot] = values[s];
-        _added++;
     }
 
     /// <summary>Index 0 is the oldest point kept.</summary>
