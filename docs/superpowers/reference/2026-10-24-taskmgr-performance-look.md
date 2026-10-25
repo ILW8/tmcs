@@ -317,7 +317,7 @@ The engine name buttons' dump widths are 15 + text width + 2.
   - Ethernet: graph 150–516, captions at 519.
   - Wi-Fi: the info block is 15 px taller, so the graph is 352 tall instead of 367.
   - Memory: the composition block (397–480) stays fixed; the usage graph takes the rest (226).
-  - Disk: Disk transfer rate is 67 tall; Active time takes the rest (263). Whether 67 is fixed or a ratio can't be determined at one window size.
+  - Disk: Disk transfer rate is 67 tall; Active time takes the rest (263). The 67 is fixed (section 8).
   - GPU: the content doesn't fit. Its info block is 531–676, and the scrollable content ends at 676 + 20 = 696.
 - **Horizontal:** the title is at x=251 (pane x+17); graphs and info at 253 (pane x+19); the right edge is 1262 (pane right − 24), or 1245 with the GPU scrollbar.
 
@@ -363,12 +363,30 @@ The engine name buttons' dump widths are 15 + text width + 2.
 - Rows are 18 apart from the info-block top. The text origin y is the row y.
 - The dump rects are 2 px left of the text and 4 px wider than it: block + 10 for keys, key rect + widest key rect + 10 for values.
 
+## 8. Short window: minimum heights and scrolling
+
+A second capture (`artifacts/reference/taskmgr-short/`, 2026-10-25) was taken with the window shrunk to 1294×394 at 96 DPI, so the Tables pane is 234,81,1052,257. The sidebar scrolls as before (scrollbar 209,88,17,250).
+
+- **Rule:** the flexible element stops shrinking at **80 px**. Once the content no longer fits with it at 80, the pane scrolls: every pane shows the vertical scrollbar (1269,81,17,257), which narrows the content and moves the right edge to 1245.
+- **Content height** (pane-relative, so the scroll range) = the stack with the flexible element at 80, then the info block, then 20 px below it.
+
+| Pane | Flexible element at 80 | Fixed parts below it | Info block | Content height |
+|---|---|---|---|---|
+| CPU | "Logical CPU chart pane" 253,134,992,80: the top captions at 134, the grid 150–199, the empty 15-px band to 214 | none | 224–369 (145) | 308 |
+| Memory | `Memory usage` graph 150–230, bottom captions at 232 | composition block 251–335 | 345–490 (145) | 429 |
+| Disk | `Active time` graph 150–230 | `Disk transfer rate` caption at 251, graph 267–334 (67) | 359–453 (94) | 392 |
+| Ethernet | `Throughput` graph 150–230, bottom captions at 232 | none | 255–349 (94) | 288 |
+| Wi-Fi | as Ethernet | none | 255–364 (109) | 303 |
+| GPU | none: the same layout as the full-size capture | engine cells, memory graphs | 531–676 (145) | 615 |
+
+- **CPU grid at the minimum:** the grid is 49 tall (150–199). Rows start at 150, 163, 176 and 189 and are 9, 9, 9 and 10 tall, so the last row takes the remainder. The columns are 120 wide at 255 + 124k, and the last one ends at 1243.
+- **Fixed heights:** the Disk transfer-rate graph (67), the GPU memory graphs (67), the GPU engine cells and the memory composition block are the same here as in the full-size captures, so they are fixed. Only the first graph flexes.
+
 ## Not determinable from these captures
 
 - Sidebar hover and pressed looks.
 - The Wi-Fi and GPU 0 sidebar entries' pixels, including the GPU mini-graph colors and the temperature text color. They were always offscreen.
 - Whether a visible graph's grid scrolls with the data. The data scrolls at 1 sample/s, but the grid phase doesn't track the sample count across panes. Also how samples-per-grid-column is chosen at other graph widths.
-- Whether the Disk transfer-rate and GPU memory graph heights (67) and the composition block are fixed or proportional at other window sizes.
 - What value the inner scale marker (`7 MB/s`, `450 Kbps`) represents.
 - The GPU Temperature value's pixels. It is clipped below the pane; the dump puts `39 °C` at 374,648,127,28, the 20-px value style.
 - Whether the sidebar's network mini-graph send line is dashed.
