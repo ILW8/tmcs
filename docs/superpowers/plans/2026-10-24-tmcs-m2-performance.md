@@ -1220,21 +1220,22 @@ Run spec section 9's tests for the whole milestone. M1's Task 13 and its results
 **Files:**
 - Modify: `docs/superpowers/results/2026-10-24-m2-soak.md` (begun in Task 14), `README.md` (the new scenario actions, `-GpuParallel`)
 
-**The scenario,** used by both soaks: `cpu:12,network:12,gpu:12,details:12,minimized:12,cpu:3,paused:10,cpu:2` (75 minutes).
+**The scenario,** used by both soaks: `details:1,gpu:1,minimized:1,network:12,cpu:12,gpu:12,details:12,minimized:12,cpu:3,paused:10,cpu:2` (78 minutes).
+- Amended during execution, after the final review. The report's same-state drift rows compare the first `cpu` segment with the later ones, so that segment must start after the GC's heap commit (about minute 12 in M1) and after every view has made its first-show window and painting objects. The 3-minute tour shows each view once, and `network:12` comes before the first `cpu`.
 - Each soaked state gets 10 minutes after the 2-minute warm-up (spec test 1).
-- The `details` step comes after 36 minutes on the Performance tab, so its first row's `switch_ms` is spec test 2.
+- The 12-minute `details` step comes after 33 minutes on the Performance tab, so its first row's `switch_ms` is spec test 2.
 - `minimized` → `cpu` checks restoring.
 - `paused` holds the CPU pane for spec test 3.
 
 - [ ] **Step 1: Build.** Run `dotnet test` and expect all PASS. Run `dotnet publish src/Tmcs -p:PublishProfile=win-x64`, `dotnet build -c Debug` and `dotnet build tools/gpu-touch -c Release`.
-- [ ] **Step 2: Ask first.** Tell the owner in chat that two tmcs windows will sit behind their windows for about 80 minutes without taking focus, and that the churn includes short GPU processes. Wait for their OK.
-- [ ] **Step 3: Churn.** Start `pwsh -File tools/churn.ps1 -Parallel 8 -GpuParallel 2 -Minutes 80` in the background.
+- [ ] **Step 2: Ask first.** Tell the owner in chat that two tmcs windows will sit behind their windows for about 85 minutes without taking focus, and that the churn includes short GPU processes. Wait for their OK.
+- [ ] **Step 3: Churn.** Start `pwsh -File tools/churn.ps1 -Parallel 8 -GpuParallel 2 -Minutes 85` in the background.
 - [ ] **Step 4: Non-elevated soak.** Run the Debug build with the scenario and `TMCS_DIAG` set to `artifacts/soak/m2-debug.csv`, as in M1's Task 13 Step 3.
 - [ ] **Step 5: Elevated soak.**
   - Tell the owner a UAC prompt is coming, and wait for "ready".
   - Then launch the published build elevated with `artifacts/soak/m2-elevated.csv`, as in M1's Task 13 Step 4.
 - [ ] **Step 6: Score.**
-  - Run `soak-report.ps1` on each CSV. Expect exit code 0.
+  - Run `soak-report.ps1` on each CSV. Expect exit code 0, except that the segment holding the GC's heap commit (around minute 12) may FAIL its private-bytes growth row, as in M1. Explain every FAIL.
   - Also report, per segment, the `gpu_instances` range (it should track the live GPU processes, not grow) and whether `devices` stayed constant. Explain any change in `devices`.
 - [ ] **Step 7: Idle cost (spec test 4), on each tab.**
   - Take tmcs's CPU ms per minute from the elevated CSV's `cpu` and `details` segments.
