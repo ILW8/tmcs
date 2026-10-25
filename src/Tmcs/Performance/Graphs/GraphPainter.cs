@@ -119,6 +119,11 @@ internal sealed class GraphPainter : IDisposable
         g.SmoothingMode = SmoothingMode.AntiAlias;
     }
 
+    /// <summary>
+    /// Puts the points of <paramref name="series"/> in the buffer, each rounded to a whole pixel as Task Manager does: at a
+    /// fractional y, an anti-aliased 1-px line is two rows of a lighter color. The x rounds as the grid's does, so points on
+    /// a grid sample sit on its line.
+    /// </summary>
     int BuildLine(History history, int series, float max, int first, int left, int right, int top, int bottom)
     {
         var latest = history.LatestTime;
@@ -130,7 +135,8 @@ internal sealed class GraphPainter : IDisposable
             var value = history.ValueAt(series, i);
             var v = float.IsNaN(value) ? 0f : Math.Clamp(value, 0f, max); // Clamp passes NaN through, and GDI+ must not get it
             var x = right - (latest - history.TimeAt(i)) / (double)History.Window100Ns * width;
-            _points[n++] = new PointF((float)x, (float)(bottom - v / max * height));
+            var y = bottom - v / max * height;
+            _points[n++] = new PointF((float)Math.Round(x, MidpointRounding.AwayFromZero), (float)Math.Round(y, MidpointRounding.AwayFromZero));
         }
         return n;
     }

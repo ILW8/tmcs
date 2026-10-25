@@ -114,6 +114,7 @@ How these were identified:
 - **Fill over the border:** where the memory fill covers the left border column, that column shows 9528B4.
 - **Lines:**
   - All data lines are 1 px and anti-aliased, with a GDI+ AntiAlias look.
+  - Each point is rounded to a whole pixel before the line and fill are drawn, so a steady value is one row in the line's own color. Capture 02's memory line is 9528B4 on row 241, then on row 240. A GDI+ render with rounded points matches its step at x 1086–1111 to a total channel difference of 69. With x not rounded, the difference is 239. With y 0.4 px below a whole pixel, it is 8,120. (Found in the owner's fidelity check on 2026-10-25.)
   - The dashed series use the GDI+ `DashStyle.Dash` pattern, 3 on and 1 off. On a vertical stretch of the send line (capture 10, x=562) the pixels alternate 2× DF672C and 2× EFB395 (50%), which is a 3:1 dash at a half-pixel phase.
 - **Grid alpha:** the Disk grid equals 4DA60C at 20% over white exactly. The CPU grid is about 117DBB at 16%, and that drawn over F1F6FA gives the measured CEE2F0 to within 1. The other devices don't fit a single alpha, so use the opaque values from the table.
 - **Memory composition bar** (02):

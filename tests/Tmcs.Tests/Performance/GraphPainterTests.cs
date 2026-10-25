@@ -35,8 +35,14 @@ public class GraphPainterTests
     { var px = Paint(Steady(50, 0), second: -1);
       Assert.Equal(0xF1F6FA, px[50, 70]); Assert.Equal(0xFFFFFF, px[50, 20]); Assert.Equal(0xCEE2F0, px[50, 45]); }
 
+    // Task Manager rounds each point to a whole pixel, so a steady value is one row in the line's own color. At its exact y,
+    // 50.25, the line would be two rows of a lighter color.
+    [Fact] public void Steady_line_is_one_row_of_the_line_color()
+    { var px = Paint(Steady(33, 0), second: -1); // y = 75 − 33% of 75 = 50.25
+      Assert.Equal(0xFFFFFF, px[50, 49]); Assert.Equal(0x117DBB, px[50, 50]); Assert.Equal(0xF1F6FA, px[50, 51]); }
+
     [Fact] public void Kernel_time_fills_darker_below_its_line()
-    { var px = Paint(Steady(80, 30)); // total line at y 15, kernel line at y 52.5
+    { var px = Paint(Steady(80, 30)); // total line at y 15, kernel line at y 53
       Assert.Equal(0xD9E7F1, px[50, 65]); Assert.Equal(0xF1F6FA, px[50, 35]);
       Assert.Equal(0xBAD6E8, px[50, 68]); Assert.Equal(0xCEE2F0, px[50, 45]); Assert.Equal(0xD9EAF4, px[50, 8]); }
 
@@ -72,10 +78,10 @@ public class GraphPainterTests
     { var h = Steady(50, 0); h.Add(61 * 10_000_000L, [float.NaN, float.NaN]); // the newest point drops to 0
       var px = Paint(h);
       Assert.Equal(0xF1F6FA, px[50, 70]); Assert.Equal(0xFFFFFF, px[50, 20]); // the half-load fill is still drawn
-      // 600 wide, so the last segment spans 10 px: it falls from (588.8, 37.5) to the bottom at x 599, crossing x 594 at
+      // 600 wide, so the last segment spans 10 px: it falls from (589, 38) to the bottom at x 599, crossing x 594 at
       // y 56.5, and both probes are over 2 px from it.
       var wide = Paint(h, second: -1, width: 600);
-      Assert.Equal(0xF1F6FA, wide[594, 70]); // filled below it: a skipped point would end the fill at x 588.8
+      Assert.Equal(0xF1F6FA, wide[594, 70]); // filled below it: a skipped point would end the fill at x 589
       Assert.Equal(0xFFFFFF, wide[594, 48]); // white above it: a NaN taken as max would rise to the top
       var nan = new History(2); for (var i = 0; i < 60; i++) nan.Add((i + 1) * 10_000_000L, [float.NaN, float.NaN]);
       var all = Paint(nan); // white apart from the grid
