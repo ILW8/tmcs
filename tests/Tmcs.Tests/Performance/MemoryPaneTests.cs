@@ -82,7 +82,7 @@ public sealed class MemoryPaneTests
 
         Assert.Equal(new Rectangle(19, 69, 1009, 226), rig.Pane.GraphBounds);
         Assert.Equal(new Rectangle(19, 334, 1009, 52), rig.Pane.BarBounds);
-        Assert.Equal(316, rig.Pane.BarBounds.Y - 18); // the composition caption
+        Assert.Equal(316, rig.Pane.CompositionTop);
     });
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class MemoryPaneTests
 
         Assert.True(pane.VerticalScroll.Visible);
         Assert.Equal(new Rectangle(19, 69, 992, 80), pane.GraphBounds);
-        Assert.Equal(170, pane.BarBounds.Y - 18); // the composition caption
+        Assert.Equal(170, pane.CompositionTop);
         Assert.Equal(new Rectangle(19, 188, 992, 52), pane.BarBounds);
         Assert.Equal(264, pane.InfoBottom - pane.BuildInfo().Height);
 
@@ -199,6 +199,83 @@ public sealed class MemoryPaneTests
         Assert.Equal(0xFFFFFF, Px(bar.X + 1 + 608, y));
         Assert.Equal(0xCEB0D7, Px(bar.X + 1 + 960, y));
         Assert.Equal(0xFFFFFF, Px(bar.Right - 2, y));
+    });
+
+    static MemoryCounters Counters(long modified, long standby, long free) =>
+        new(0, 0, 0, 0, 0, Modified: modified, Standby: standby, Free: free);
+
+    [Fact]
+    public void Segments_never_pass_the_inner_width() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        // Thirds with no Free: 1007 / 3 rounds up three times, to 1008.
+        rig.Source.Info = rig.Source.Info with { TotalPhysical = 3 * Gib };
+        rig.Source.Counters = Counters(Gib, Gib, 0);
+        rig.Reload();
+        rig.Sample(1);
+
+        var (a, b, c, d) = rig.Pane.SegmentWidths();
+        Assert.Equal((336, 336, 335, 0), (a, b, c, d));
+        Assert.Equal(1007, a + b + c + d);
+
+        using var bmp = new Bitmap(1052, 575);
+        using (var g = Graphics.FromImage(bmp)) rig.Pane.PaintTo(g);
+        var bar = rig.Pane.BarBounds;
+        Assert.Equal(0x8B12AE, bmp.GetPixel(bar.Right - 1, bar.Y + 20).ToArgb() & 0xFFFFFF);
+    });
+
+    [Fact]
+    public void Negative_in_use_and_zero_total_are_safe() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Source.Info = rig.Source.Info with { TotalPhysical = Gib };
+        rig.Source.Counters = Counters(0, 2 * Gib, 0); // In use = 1 - 2 GiB
+        rig.Reload();
+        rig.Sample(1);
+        Assert.True(rig.Memory.InUse < 0);
+        Assert.Equal((0, 0, 1007, 0), rig.Pane.SegmentWidths());
+
+        rig.Source.Info = rig.Source.Info with { TotalPhysical = 0 };
+        rig.Reload();
+        rig.Sample(1);
+        Assert.Equal((0, 0, 0, 1007), rig.Pane.SegmentWidths());
+        using var bmp = new Bitmap(1052, 575);
+        using var g = Graphics.FromImage(bmp);
+        rig.Pane.PaintTo(g);
+    });
+
+    [Fact]
+    public void A_zero_width_in_use_leaves_no_separator_at_the_border() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Source.Info = rig.Source.Info with { TotalPhysical = 10 * Gib };
+        rig.Source.Counters = Counters(0, 4 * Gib, 6 * Gib); // all of it Standby and Free
+        rig.Reload();
+        rig.Sample(1);
+        using var bmp = new Bitmap(1052, 575);
+        using (var g = Graphics.FromImage(bmp)) rig.Pane.PaintTo(g);
+
+        var bar = rig.Pane.BarBounds;
+        Assert.Equal((0, 0, 403, 604), rig.Pane.SegmentWidths());
+        Assert.Equal(0xFFFFFF, bmp.GetPixel(bar.X + 1, bar.Y + 20).ToArgb() & 0xFFFFFF); // Standby, first drawn
+        Assert.Equal(0xCEB0D7, bmp.GetPixel(bar.X + 1 + 403, bar.Y + 20).ToArgb() & 0xFFFFFF);
+    });
+
+    [Fact]
+    public void Unknown_smbios_rows_are_left_out() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        var keys = (MemoryInfo info) =>
+        {
+            rig.Source.Info = info;
+            rig.Reload();
+            return rig.Pane.BuildInfo().Table.Select(r => r.Row.Key).ToArray();
+        };
+        var full = rig.Source.Info;
+
+        Assert.Equal(["Slots used:", "Form factor:", "Hardware reserved:"], keys(full with { SpeedMhz = 0 }));
+        Assert.Equal(["Speed:", "Slots used:", "Hardware reserved:"], keys(full with { FormFactor = " " }));
+        Assert.Equal(["Speed:", "Slots used:", "Form factor:"], keys(full with { Installed = full.TotalPhysical }));
     });
 
     [Fact]

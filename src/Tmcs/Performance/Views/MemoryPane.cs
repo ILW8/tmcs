@@ -79,8 +79,9 @@ internal sealed class MemoryPane : PerformancePane
     }
 
     /// <summary>
-    /// Each segment is round(inner × part / total), half away from zero; Free takes what is left, and no less than 0. A total
-    /// of 0 leaves everything to Free. The rule is the owner's: the captures could not determine Task Manager's.
+    /// Each segment is round(inner × part / total), half away from zero, a negative part counting as 0, and no segment is wider
+    /// than what the ones before it left; Free takes the rest. A total of 0 leaves everything to Free. The rule is the owner's:
+    /// the captures could not determine Task Manager's.
     /// </summary>
     static (int InUse, int Modified, int Standby, int Free) Segments(MemoryDevice memory, int inner)
     {
@@ -88,12 +89,16 @@ internal sealed class MemoryPane : PerformancePane
         var total = memory.Info.TotalPhysical;
         if (total <= 0) return (0, 0, 0, inner);
 
-        int Part(long bytes) => (int)Math.Round((double)inner * bytes / total, MidpointRounding.AwayFromZero);
-        var inUse = Part(memory.InUse);
-        var modified = Part(memory.Modified);
-        var standby = Part(memory.Standby);
-        return (inUse, modified, standby, Math.Max(0, inner - inUse - modified - standby));
+        int Part(long bytes, int left) =>
+            Math.Min(left, (int)Math.Round((double)inner * Math.Max(0, bytes) / total, MidpointRounding.AwayFromZero));
+        var inUse = Part(memory.InUse, inner);
+        var modified = Part(memory.Modified, inner - inUse);
+        var standby = Part(memory.Standby, inner - inUse - modified);
+        return (inUse, modified, standby, inner - inUse - modified - standby);
     }
+
+    /// <summary>The composition caption's y; the bar is 18 px below it.</summary>
+    internal int CompositionTop => Device is MemoryDevice memory ? BlockTop(BuildInfo(memory)) : 0;
 
     /// <summary>The block's top: 10 px above the info block and 84 px tall.</summary>
     int BlockTop(InfoLayout info) => ChartBottom(info) - Fonts.Scale(BlockHeight);
@@ -120,19 +125,21 @@ internal sealed class MemoryPane : PerformancePane
         var inner = new Rectangle(bar.X + 1, bar.Y + 1, bar.Width - 2, bar.Height - 2);
         var (inUse, modified, standby, free) = Segments(memory, inner.Width);
         var x = inner.X;
-        Segment(g, ref x, inner, inUse, InUseFill, first: true);
-        Segment(g, ref x, inner, modified, ModifiedFill, first: false);
-        Segment(g, ref x, inner, standby, Color.White, first: false);
-        Segment(g, ref x, inner, free, Color.White, first: false);
+        var first = true; // the first segment drawn has no separator, whichever it is
+        Segment(g, ref x, inner, inUse, InUseFill, ref first);
+        Segment(g, ref x, inner, modified, ModifiedFill, ref first);
+        Segment(g, ref x, inner, standby, Color.White, ref first);
+        Segment(g, ref x, inner, free, Color.White, ref first);
     }
 
-    /// <summary>One segment of <paramref name="width"/> px at <paramref name="x"/>; all but the first start with a 1-px line.</summary>
-    void Segment(Graphics g, ref int x, Rectangle inner, int width, Color fill, bool first)
+    /// <summary>One segment of <paramref name="width"/> px at <paramref name="x"/>; all but the first drawn start with a 1-px line.</summary>
+    void Segment(Graphics g, ref int x, Rectangle inner, int width, Color fill, ref bool first)
     {
         if (width <= 0) return;
         var start = x;
         x += width;
-        if (!first)
+        if (first) first = false;
+        else
         {
             Fill(g, Separator, new Rectangle(start, inner.Y, 1, inner.Height));
             start++;
