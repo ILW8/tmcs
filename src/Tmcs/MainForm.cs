@@ -25,6 +25,7 @@ internal class MainForm : Form, IScenarioTarget
 {
     private const int WmCommand = 0x0111;
     private const int WmInitMenuPopup = 0x0117;
+    private const int WmWindowPosChanged = 0x0047;
 
     /// <summary>A change is saved this long after the last one, so a drag saves once.</summary>
     private const int SaveDelayMs = 2000;
@@ -64,6 +65,12 @@ internal class MainForm : Form, IScenarioTarget
     private bool _loaded;
 
     private bool _wasMinimized;
+
+    /// <summary>Whether the window was minimized or maximized at the latest WM_WINDOWPOSCHANGED.</summary>
+    private bool _leftNormal;
+
+    /// <summary>True while WinForms handles the move that takes the window from minimized or maximized back to normal.</summary>
+    private bool _restoringToNormal;
 
     public MainForm(AppServices services)
     {
@@ -251,9 +258,36 @@ internal class MainForm : Form, IScenarioTarget
             case User32.WmDeviceChange when m.WParam is User32.DbtDevNodesChanged or User32.DbtDeviceArrival or User32.DbtDeviceRemoveComplete:
                 _performance.MarkDevicesChanged();
                 break;
+            // Not from WindowState: WinForms may already have set it to Normal while the restore was under way.
+            case WmWindowPosChanged:
+                var wasNormal = !_leftNormal;
+                _leftNormal = User32.IsIconic(Handle) || User32.IsZoomed(Handle);
+                if (wasNormal || _leftNormal) break;
+                _restoringToNormal = true;
+                try
+                {
+                    base.WndProc(ref m);
+                }
+                finally
+                {
+                    _restoringToNormal = false;
+                }
+                return;
         }
 
         base.WndProc(ref m);
+    }
+
+    /// <summary>
+    /// Windows has already put a window it restores back at its normal place and size. WinForms then sets the bounds it saved
+    /// when the window left normal, and before Windows 11 it saved the client size, which it turns back into a window size
+    /// without the menu bar: it knows nothing of the native menu. The window lost the menu bar's height on every restore and was
+    /// laid out twice, so a restore keeps the bounds Windows gave it.
+    /// </summary>
+    protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
+    {
+        if (_restoringToNormal) (x, y, width, height) = (Left, Top, Width, Height);
+        base.SetBoundsCore(x, y, width, height, specified);
     }
 
     protected override void Dispose(bool disposing)

@@ -405,6 +405,28 @@ public sealed partial class MainFormTests : IDisposable
     });
 
     [Fact]
+    public void Restoring_from_minimized_keeps_the_window_size() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        var window = rig.Form.WindowRect;
+        var client = rig.Form.ClientSize;
+        var resizes = 0;
+        rig.Form.PerformanceView.Resize += (_, _) => resizes++;
+
+        for (var i = 0; i < 3; i++)
+        {
+            rig.Form.MinimizeWithoutActivation();
+            resizes = 0;
+            rig.Form.RestoreWithoutActivation();
+            Assert.Equal(1, resizes); // laid out once, back at its size
+        }
+
+        Assert.Equal(window, rig.Form.WindowRect);
+        Assert.Equal(client, rig.Form.ClientSize);
+    });
+
+    [Fact]
     public void Failed_snapshot_keeps_the_last_rows() => Sta.Run(() =>
     {
         using var rig = new Rig(SettingsPath);
