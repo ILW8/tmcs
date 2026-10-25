@@ -1,4 +1,5 @@
 using Tmcs.Devices;
+using Tmcs.Devices.Network;
 using Tmcs.Native;
 using Tmcs.Performance;
 using Tmcs.Performance.Views;
@@ -127,6 +128,39 @@ public sealed class PerformanceViewTests
 
         Assert.False(view.Sidebar.SelectKey("disk:9"));
         Assert.Equal("disk:0", view.Sidebar.SelectedKey);
+    });
+
+    [Fact]
+    public void Refreshing_brings_the_visible_panes_scroll_range_up_to_date() => Sta.Run(() =>
+    {
+        // A Wi-Fi adapter with no connection details yet: no SSID or signal row, so its pane needs 288 px, and it is 290 tall.
+        var sources = FakeDeviceSources.Create();
+        var network = sources.FakeNetwork();
+        network.Adapters = [new AdapterInfo(FakeDeviceSources.A, 1, "Wi-Fi 2", "Fake Wi-Fi adapter", null, true, "10.0.0.2", "fe80::1")];
+        using var model = new PerformanceModel(sources);
+        model.Sample(10_000_000, Array.Empty<RawProcess>());
+        var view = new PerformanceView(model, AppSettings.CreateDefault()) { Bounds = new Rectangle(0, 0, 1278, 338) };
+        using var form = new OffscreenForm { ClientSize = new Size(1278, 338) };
+        form.Controls.Add(view);
+        form.ShowOffscreen();
+        view.ApplyDpi(96); // whatever the host's DPI is
+        Assert.True(view.Sidebar.SelectFirst(DeviceKind.Network));
+        var pane = view.VisiblePane;
+        Application.DoEvents();
+        Assert.Equal(290, pane.Height);
+        Assert.False(pane.VerticalScroll.Visible);
+
+        // The same device gains its SSID and signal rows, 303 px, with no rescan and no new selection.
+        network.Wifi = new WifiInfo("frame_4BD93CDF", "802.11ax", 60);
+        model.Sample(20_000_000, Array.Empty<RawProcess>());
+        Application.DoEvents();
+        Assert.Same(pane, view.VisiblePane);
+        Assert.False(pane.VerticalScroll.Visible); // nothing has refreshed it yet
+
+        view.RefreshVisible();
+        Application.DoEvents();
+
+        Assert.True(pane.VerticalScroll.Visible);
     });
 
     [Fact]

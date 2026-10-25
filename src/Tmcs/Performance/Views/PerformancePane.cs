@@ -37,7 +37,7 @@ internal abstract class PerformancePane : ScrollableControl
         base.AutoScroll = true;
     }
 
-    /// <summary>The device shown, set by the view.</summary>
+    /// <summary>The device shown, set by the view. The scroll range follows it, since <see cref="ContentHeight"/> may depend on it.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Device? Device
     {
@@ -46,6 +46,7 @@ internal abstract class PerformancePane : ScrollableControl
         {
             if (ReferenceEquals(_device, value)) return;
             _device = value;
+            UpdateScrollSize();
             Invalidate();
         }
     }
@@ -221,9 +222,18 @@ internal abstract class PerformancePane : ScrollableControl
         base.Dispose(disposing);
     }
 
-    int Unscale(int pixels) => (int)Math.Round(pixels * 96.0 / _fonts.Dpi, MidpointRounding.AwayFromZero);
+    /// <summary>
+    /// Sets the scroll range to <see cref="ContentHeight"/> when that changed. The device's data can change it while the device
+    /// stays (a rescan adds a DNS row, a Wi-Fi adapter connects), so the view calls this on every refresh. Never call it from a
+    /// paint: a new range lays the pane out again.
+    /// </summary>
+    internal void UpdateScrollSize()
+    {
+        var size = new Size(0, _fonts.Scale(ContentHeight));
+        if (AutoScrollMinSize != size) AutoScrollMinSize = size;
+    }
 
-    void UpdateScrollSize() => AutoScrollMinSize = new Size(0, _fonts.Scale(ContentHeight));
+    int Unscale(int pixels) => (int)Math.Round(pixels * 96.0 / _fonts.Dpi, MidpointRounding.AwayFromZero);
 }
 
 /// <summary>The title and subtitle only: stands in for each kind until that kind's own pane is built.</summary>

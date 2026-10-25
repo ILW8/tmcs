@@ -47,7 +47,7 @@ internal sealed class InfoLayout
         }
 
         Table = placed;
-        Height = Math.Max(0, Math.Max(lines * Pitch - LastRowTrim, y)); // no rows and no table: 0, not −8
+        Height = HeightOf(lines, table);
     }
 
     public int Height { get; }
@@ -106,6 +106,17 @@ internal sealed class InfoLayout
         }
 
         return new InfoLayout(items, right, longest, table, labelWidth);
+    }
+
+    /// <summary>
+    /// The <see cref="Height"/> of a block of <paramref name="lines"/> rows of items beside <paramref name="table"/>, without
+    /// measuring any text: the items' rows less the last one's trim, or the table's rows if taller.
+    /// </summary>
+    public static int HeightOf(int lines, IReadOnlyList<StaticRow> table)
+    {
+        var rows = 0;
+        for (var i = 0; i < table.Count; i++) rows += table[i].Height; // no foreach: an interface's enumerator is boxed
+        return Math.Max(0, Math.Max(lines * Pitch - LastRowTrim, rows)); // no rows and no table: 0, not −8
     }
 
     static int TextX(InfoItem item, int x) => item.Marker == InfoMarker.None ? x : x + MarkerIndent;

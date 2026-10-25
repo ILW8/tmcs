@@ -39,6 +39,7 @@ internal sealed class PerformanceView : Control
                 DeviceKind.Cpu => new CpuPane(_fonts),
                 DeviceKind.Memory => new MemoryPane(_fonts),
                 DeviceKind.Disk => new DiskPane(_fonts),
+                DeviceKind.Network => new NetworkPane(_fonts),
                 _ => new TitlePane(_fonts),
             };
             _panes[i].Visible = false;
@@ -66,10 +67,14 @@ internal sealed class PerformanceView : Control
 
     internal PerformancePane VisiblePane => _visible;
 
-    /// <summary>Repaints what shows from the current histories: the sidebar and the visible pane, nothing else.</summary>
+    /// <summary>
+    /// Repaints what shows from the current histories: the sidebar and the visible pane, nothing else. The sample just taken can
+    /// change the pane's content height, so its scroll range is brought up to date first, here and not in its paint.
+    /// </summary>
     public void RefreshVisible()
     {
         _sidebar.Invalidate();
+        _visible.UpdateScrollSize();
         _visible.Invalidate();
     }
 
