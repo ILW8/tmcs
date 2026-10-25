@@ -226,7 +226,30 @@ public sealed class NetworkPaneTests
         Assert.Equal(["Adapter name:", "Connection type:", "IPv4 address:"], Keys(rig.Pane));
 
         rig.Pane.Device = new Adapter(wifi: true, wifiDetails: false).Device;
-        Assert.Equal(["Adapter name:", "Connection type:", "IPv4 address:", "IPv6 address:"], Keys(rig.Pane));
+        Assert.Equal(["Adapter name:", "IPv4 address:", "IPv6 address:"], Keys(rig.Pane)); // no connection type either
+    });
+
+    [Fact]
+    public void Unknown_connection_type_is_left_out() => Sta.Run(() =>
+    {
+        // Without its details a Wi-Fi adapter's connection type is unknown, and so is it with a PHY type of no name.
+        var noDetails = new Adapter(wifi: true, dns: "home.arpa", wifiDetails: false);
+        var noPhy = new Adapter(wifi: true, dns: "home.arpa");
+        noPhy.Source.Wifi = noPhy.Source.Wifi! with { PhyType = "" };
+        noPhy.Sample();
+        using var rig = new Rig(noDetails);
+        var pane = rig.Pane;
+
+        Assert.Equal("", noDetails.Device.ConnectionType);
+        Assert.Equal(["Adapter name:", "DNS name:", "IPv4 address:", "IPv6 address:"], Keys(pane));
+        Assert.Equal(194 + pane.BuildInfo().Height, pane.ContentHeight); // the height counts the rows the block draws
+        Assert.Equal(288, pane.ContentHeight);
+
+        pane.Device = noPhy.Device;
+        Assert.Equal("", noPhy.Device.ConnectionType);
+        Assert.Equal(["Adapter name:", "SSID:", "DNS name:", "IPv4 address:", "IPv6 address:", "Signal strength:"], Keys(pane));
+        Assert.Equal(194 + pane.BuildInfo().Height, pane.ContentHeight);
+        Assert.Equal(194 + 5 * 18 + 19, pane.ContentHeight); // the table outgrows the items' 94
     });
 
     [Fact]
@@ -273,11 +296,14 @@ public sealed class NetworkPaneTests
             Assert.Equal(0xFFFFFF, Rgb(bmp, 13, 9)); // inside bar 5
             Assert.Equal(0xBB814E, Rgb(bmp, 9, 9)); // bar 4's left outline, bar 3's right
             Assert.Equal(0xBB814E, Rgb(bmp, 12, 0)); // bar 5's top left corner
-            Assert.Equal(0xBB814E, Rgb(bmp, 15, 13)); // bar 5's bottom right corner
+            Assert.Equal(0xDBBAA0, Rgb(bmp, 10, 13)); // bar 4's inside reaches y 13, as in the look reference's row 630
+            Assert.Equal(0xFFFFFF, Rgb(bmp, 13, 13)); // and so does bar 5's
+            Assert.Equal(0xBB814E, Rgb(bmp, 15, 13)); // bar 5's right side
+            Assert.Equal(0xBB814E, Rgb(bmp, 15, 14)); // bar 5's bottom right corner
             Assert.Equal(0xFFFFFF, Rgb(bmp, 1, 9)); // above bar 1, whose top is at 10
             Assert.Equal(0xBB814E, Rgb(bmp, 0, 10));
-            Assert.Equal(0xFFFFFF, Rgb(bmp, 7, 14)); // the row between the bars and the baseline
-            Assert.Equal(0xBB814E, Rgb(bmp, 0, 15)); // the baseline
+            Assert.Equal(0xBB814E, Rgb(bmp, 7, 14)); // the bars' bottom outline, row 631
+            Assert.Equal(0xBB814E, Rgb(bmp, 0, 15)); // the baseline, row 632
             Assert.Equal(0xBB814E, Rgb(bmp, 15, 15));
         }
 
@@ -287,9 +313,9 @@ public sealed class NetworkPaneTests
             wifi.Sample(received: FortyKbps);
             using var bmp = Paint(rig.Pane, glyph);
 
-            // Every bar's inside reaches y 12; bar n's starts at x 3n + 1.
+            // Every bar's inside reaches y 13; bar n's starts at x 3n + 1.
             for (var bar = 0; bar < 5; bar++)
-                Assert.Equal(bar < bars ? 0xDBBAA0 : 0xFFFFFF, Rgb(bmp, 3 * bar + 1, 12));
+                Assert.Equal(bar < bars ? 0xDBBAA0 : 0xFFFFFF, Rgb(bmp, 3 * bar + 1, 13));
         }
     });
 

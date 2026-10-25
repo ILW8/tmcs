@@ -23,7 +23,10 @@ internal sealed class NetworkPane : PerformancePane
     const string SignalKey = "Signal strength:";
     const int SignalRowHeight = 19;
 
-    /// <summary>The signal glyph's bars' tops. Bar n is 4 px wide at x 3n, so it shares an outline with the next; all end at y 13.</summary>
+    /// <summary>
+    /// The signal glyph's bars' tops. Bar n's outline is 4 px wide at x 3n, so it shares a side with the next, and runs down to y 14
+    /// (look reference section 6: the fill reaches y 13, the bottom outline is y 14, and the baseline y 15).
+    /// </summary>
     static readonly int[] BarTops = [10, 7, 5, 2, 0];
 
     readonly GraphPainter _painter = new(GraphPalettes.Network);
@@ -34,6 +37,12 @@ internal sealed class NetworkPane : PerformancePane
     readonly InfoItem[][] _rows = [new InfoItem[1], new InfoItem[1]];
     readonly List<StaticRow> _table = new(7);
     readonly Func<string, int> _labelWidth, _valueWidth;
+
+    /// <summary>
+    /// The table <see cref="ContentHeight"/> counts, refilled whenever it is asked for, which is during every paint: its own list,
+    /// so it never refills <see cref="_table"/> behind a layout built from it.
+    /// </summary>
+    readonly List<StaticRow> _heightTable = new(7);
 
     /// <summary>
     /// The widest Send or Receive value shown, in 96-DPI units, and the least width of their column: Task Manager's column never
@@ -51,7 +60,8 @@ internal sealed class NetworkPane : PerformancePane
     /// The info block's height + 194 (look reference section 8): 288 for Ethernet's 94, 303 for Wi-Fi's 109, and 288, the least
     /// an adapter needs, without one. It measures no text, as the pane asks for it while it paints.
     /// </summary>
-    public override int ContentHeight => AroundInfo + InfoLayout.HeightOf(_rows.Length, Table(Device as NetworkDevice));
+    public override int ContentHeight =>
+        AroundInfo + InfoLayout.HeightOf(_rows.Length, Table(_heightTable, Device as NetworkDevice));
 
     /// <summary>The Throughput graph's rectangle; empty without an adapter.</summary>
     internal Rectangle GraphBounds => Device is NetworkDevice net ? Graph(BuildInfo(net)) : Rectangle.Empty;
@@ -110,28 +120,29 @@ internal sealed class NetworkPane : PerformancePane
         _widestRate = Math.Max(_widestRate, Math.Max(ValueWidth(send), ValueWidth(receive)));
         _rows[0][0] = new InfoItem("Send", send, InfoMarker.Dashed);
         _rows[1][0] = new InfoItem("Receive", receive, InfoMarker.Solid);
-        return InfoLayout.Rows(_rows, Table(net), _labelWidth, _valueWidth, _widestRate);
+        return InfoLayout.Rows(_rows, Table(_table, net), _labelWidth, _valueWidth, _widestRate);
     }
 
     /// <summary>
-    /// Fills <see cref="_table"/> with <paramref name="net"/>'s rows, or none without an adapter, and returns it. Task Manager
-    /// leaves out an empty DNS suffix. An address the adapter lacks is left out too, and so are the SSID and the signal
-    /// strength while there are no Wi-Fi details.
+    /// Fills <paramref name="table"/> with <paramref name="net"/>'s rows, or none without an adapter, and returns it. Task Manager
+    /// leaves out an empty DNS suffix. An address the adapter lacks is left out too, and so is an unknown connection type (a
+    /// Wi-Fi adapter without its details, or with a PHY type of no name), and the SSID and the signal strength without details.
     /// </summary>
-    List<StaticRow> Table(NetworkDevice? net)
+    static List<StaticRow> Table(List<StaticRow> table, NetworkDevice? net)
     {
-        _table.Clear();
-        if (net is null) return _table;
+        table.Clear();
+        if (net is null) return table;
         var info = net.Info;
         var wifi = net.Wifi;
-        _table.Add(new StaticRow("Adapter name:", info.Alias));
-        if (wifi is not null) _table.Add(new StaticRow("SSID:", wifi.Ssid));
-        if (!string.IsNullOrEmpty(info.DnsSuffix)) _table.Add(new StaticRow("DNS name:", info.DnsSuffix));
-        _table.Add(new StaticRow("Connection type:", net.ConnectionType));
-        if (info.IPv4 is not null) _table.Add(new StaticRow("IPv4 address:", info.IPv4));
-        if (info.IPv6 is not null) _table.Add(new StaticRow("IPv6 address:", info.IPv6));
-        if (wifi is not null) _table.Add(new StaticRow(SignalKey, "", SignalRowHeight)); // its value is the glyph, not text
-        return _table;
+        var connection = net.ConnectionType;
+        table.Add(new StaticRow("Adapter name:", info.Alias));
+        if (wifi is not null) table.Add(new StaticRow("SSID:", wifi.Ssid));
+        if (!string.IsNullOrEmpty(info.DnsSuffix)) table.Add(new StaticRow("DNS name:", info.DnsSuffix));
+        if (connection.Length > 0) table.Add(new StaticRow("Connection type:", connection));
+        if (info.IPv4 is not null) table.Add(new StaticRow("IPv4 address:", info.IPv4));
+        if (info.IPv6 is not null) table.Add(new StaticRow("IPv6 address:", info.IPv6));
+        if (wifi is not null) table.Add(new StaticRow(SignalKey, "", SignalRowHeight)); // its value is the glyph, not text
+        return table;
     }
 
     /// <summary>The signal row's glyph, 16 × 16 at the value column's x − 2 and the row's y, with <paramref name="bars"/> bars filled.</summary>
@@ -146,8 +157,8 @@ internal sealed class NetworkPane : PerformancePane
             for (var bar = 0; bar < BarTops.Length; bar++)
             {
                 var top = BarTops[bar];
-                Fill(g, _signalOutline, at, 3 * bar, top, 4, 14 - top);
-                Fill(g, bar < bars ? _signalFill : Brushes.White, at, 3 * bar + 1, top + 1, 2, 12 - top);
+                Fill(g, _signalOutline, at, 3 * bar, top, 4, 15 - top);
+                Fill(g, bar < bars ? _signalFill : Brushes.White, at, 3 * bar + 1, top + 1, 2, 13 - top);
             }
 
             Fill(g, _signalOutline, at, 0, 15, 16, 1); // the baseline
