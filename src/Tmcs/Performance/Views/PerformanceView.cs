@@ -40,6 +40,7 @@ internal sealed class PerformanceView : Control
                 DeviceKind.Memory => new MemoryPane(_fonts),
                 DeviceKind.Disk => new DiskPane(_fonts),
                 DeviceKind.Network => new NetworkPane(_fonts),
+                DeviceKind.Gpu => new GpuPane(_fonts),
                 _ => new TitlePane(_fonts),
             };
             _panes[i].Visible = false;

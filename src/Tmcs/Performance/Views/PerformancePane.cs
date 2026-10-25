@@ -185,8 +185,8 @@ internal abstract class PerformancePane : ScrollableControl
     // The height flex (look reference section 7): the info block sits on InfoBottom, the chart area ends 10 px above it, and the
     // graphs stack down from GraphTop to fill what is left.
 
-    /// <summary>The top of <paramref name="info"/>, which ends at <see cref="InfoBottom"/>.</summary>
-    protected int InfoTop(InfoLayout info) => InfoBottom - _fonts.Scale(info.Height);
+    /// <summary>The top of <paramref name="info"/>, which ends at <see cref="InfoBottom"/>. A pane with a fixed layout puts it at a fixed y.</summary>
+    protected virtual int InfoTop(InfoLayout info) => InfoBottom - _fonts.Scale(info.Height);
 
     /// <summary>The chart area's bottom, 10 px above the info block: a graph's bottom captions end here.</summary>
     protected int ChartBottom(InfoLayout info) => InfoTop(info) - _fonts.Scale(10);
