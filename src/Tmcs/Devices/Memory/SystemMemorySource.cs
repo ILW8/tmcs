@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using Tmcs.Native;
 
 namespace Tmcs.Devices.Memory;

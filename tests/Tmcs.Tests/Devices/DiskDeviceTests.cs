@@ -119,6 +119,7 @@ public sealed class DiskDeviceTests
         Assert.NotEmpty(disks);
         Assert.Equal(disks.Select(d => d.Number).Distinct().Order(), disks.Select(d => d.Number));
         Assert.Single(disks, d => d.IsSystem);
+        // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
         Assert.All(disks, d =>
         {
             Assert.True(d.Capacity > 0);

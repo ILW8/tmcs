@@ -35,10 +35,10 @@ public class PerfFormatTests : IDisposable
     [Fact]
     public void Pair_shares_the_larger_values_precision()
     {
-        const double G = 1L << 30;
-        Assert.Equal("55/120 GB", PerfFormat.Pair(54.7 * G, 119.7 * G, "GB", G));
-        Assert.Equal("38.4/63.7 GB", PerfFormat.Pair(38.4 * G, 63.7 * G, "GB", G));
-        Assert.Equal("99/932 GB", PerfFormat.Pair(99 * G, 931.496 * G, "GB", G));
+        const double gb = 1L << 30;
+        Assert.Equal("55/120 GB", PerfFormat.Pair(54.7 * gb, 119.7 * gb, "GB", gb));
+        Assert.Equal("38.4/63.7 GB", PerfFormat.Pair(38.4 * gb, 63.7 * gb, "GB", gb));
+        Assert.Equal("99/932 GB", PerfFormat.Pair(99 * gb, 931.496 * gb, "GB", gb));
     }
 
     [Fact]

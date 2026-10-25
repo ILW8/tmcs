@@ -29,7 +29,7 @@ public sealed class MemoryDeviceTests : IDisposable
         Assert.Equal(23 * Gib, mem.Cached);
         Assert.Equal(22 * Gib, mem.Standby);
         Assert.Equal(1, mem.History.Count);
-        Assert.Equal((float)(38 * Gib), mem.History.ValueAt(0, 0));
+        Assert.Equal(38 * Gib, mem.History.ValueAt(0, 0));
     }
 
     [Fact]

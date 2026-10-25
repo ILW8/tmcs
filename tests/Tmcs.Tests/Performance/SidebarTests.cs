@@ -79,10 +79,12 @@ public sealed partial class SidebarTests
         }
 
         /// <summary>The visible pane shows <paramref name="device"/>, and every other pane shows nothing.</summary>
+        // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
         public void AssertShows(Device device)
         {
             Assert.Same(device, View.VisiblePane.Device);
             Assert.Same(View.Panes[(int)device.Kind], View.VisiblePane);
+            // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
             Assert.Single(View.Panes, p => p.Visible);
             Assert.All(View.Panes, p => Assert.True(p == View.VisiblePane || p.Device is null));
         }
