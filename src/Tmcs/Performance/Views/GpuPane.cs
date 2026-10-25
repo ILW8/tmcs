@@ -68,9 +68,9 @@ internal sealed class GpuPane : PerformancePane
         Device is GpuDevice gpu ? BuildInfo(gpu) : InfoLayout.Columns([], [], _labelWidth, _valueWidth);
 
     /// <summary>The info block's top.</summary>
-    internal int InfoTop() => Fonts.Scale(InfoY);
+    internal int InfoTopY => Fonts.Scale(InfoY);
 
-    protected override int InfoTop(InfoLayout info) => InfoTop();
+    protected override int InfoTop(InfoLayout info) => InfoTopY;
 
     protected override void PaintBody(Graphics g)
     {

@@ -87,7 +87,7 @@ public sealed class GpuPaneTests
             Enumerable.Range(0, 4).Select(pane.EngineBounds));
         Assert.Equal(new Rectangle(21, 279, 988, 67), pane.DedicatedBounds);
         Assert.Equal(new Rectangle(21, 366, 988, 67), pane.SharedBounds);
-        Assert.Equal(450, pane.InfoTop());
+        Assert.Equal(450, pane.InfoTopY);
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public sealed class GpuPaneTests
 
         Assert.Equal(["Utilization", "GPU Memory", "Dedicated GPU memory", "Shared GPU memory"], info.Items.Select(i => i.Item.Label));
         Assert.Equal(94, info.Height);
-        Assert.Equal(450, rig.Pane.InfoTop()); // the shorter block keeps its place in the fixed layout
+        Assert.Equal(450, rig.Pane.InfoTopY); // the shorter block keeps its place in the fixed layout
         Assert.Equal(615, rig.Pane.ContentHeight);
     });
 

@@ -194,9 +194,6 @@ internal abstract class PerformancePane : ScrollableControl
     /// <summary>The top of the graph whose top captions are at <paramref name="captionY"/>: 16 px below them.</summary>
     protected int GraphBelowCaptions(int captionY) => captionY + _fonts.Scale(16);
 
-    /// <summary>The next graph's top captions: 19 px below <paramref name="graph"/>'s bottom captions.</summary>
-    protected int NextCaptionY(Rectangle graph) => graph.Bottom + _fonts.Scale(2) + _fonts.Scale(19);
-
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
@@ -236,7 +233,7 @@ internal abstract class PerformancePane : ScrollableControl
     int Unscale(int pixels) => (int)Math.Round(pixels * 96.0 / _fonts.Dpi, MidpointRounding.AwayFromZero);
 }
 
-/// <summary>The title and subtitle only: stands in for each kind until that kind's own pane is built.</summary>
+/// <summary>The title and subtitle only: the view's fallback for a kind without a pane of its own. Every kind has one today.</summary>
 internal sealed class TitlePane(PaneFonts fonts) : PerformancePane(fonts)
 {
     protected override void PaintBody(Graphics g)

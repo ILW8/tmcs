@@ -108,7 +108,7 @@ internal sealed class NetworkPane : PerformancePane
     /// <summary>Content-wide, from the first graph's top to its bottom captions' 15 px above the chart area's bottom.</summary>
     Rectangle Graph(InfoLayout info)
     {
-        var top = GraphTop;
+        var top = GraphBelowCaptions(CaptionY);
         var bottom = ChartBottom(info) - Fonts.Scale(BottomCaptions);
         return new Rectangle(ContentLeft, top, Math.Max(0, ContentRight - ContentLeft), Math.Max(0, bottom - top));
     }

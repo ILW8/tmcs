@@ -31,8 +31,6 @@ internal static class PerfFormat
         return Number(scaled) + " " + SizeUnits[unit];
     }
 
-    public static string Gigabytes(double bytes) => Number(bytes / (1L << 30)) + " GB";
-
     /// <summary>"a/b unit", both with the precision the larger one gets.</summary>
     public static string Pair(double a, double b, string unit, double unitBytes)
     {

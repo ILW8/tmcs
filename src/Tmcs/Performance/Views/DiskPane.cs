@@ -5,8 +5,9 @@ namespace Tmcs.Performance.Views;
 
 /// <summary>
 /// The Disk pane: the Active time graph, the Disk transfer rate graph below it, and the info block (look reference sections 4, 6
-/// and 7). The transfer-rate graph is a fixed 67 px tall and Active time takes the height that is left. No code floors it at 80 px: that
-/// follows from <see cref="ContentHeight"/>, below which the pane scrolls. Everything comes from the device on every paint, and painting creates no GDI object.
+/// and 7). The transfer-rate graph is a fixed 67 px tall and Active time takes the height that is left. No code floors it at
+/// 80 px: that follows from <see cref="ContentHeight"/>, below which the pane scrolls. Everything comes from the device on every
+/// paint, and painting creates no GDI object.
 /// </summary>
 internal sealed class DiskPane : PerformancePane
 {
@@ -44,7 +45,9 @@ internal sealed class DiskPane : PerformancePane
     internal InfoLayout BuildInfo() =>
         Device is DiskDevice disk ? BuildInfo(disk) : InfoLayout.Rows([], [], _labelWidth, _valueWidth);
 
-    /// <summary>The transfer graph's scale, from the larger of the visible read and write rates; default without a disk device.</summary>
+    /// <summary>
+    /// The transfer graph's scale, from the larger of the visible read and write rates; default without a disk device.
+    /// </summary>
     internal (float Max, string Caption) TransferScale => Device is DiskDevice disk ? ScaleOf(disk) : default;
 
     static (float Max, string Caption) ScaleOf(DiskDevice disk) =>
@@ -82,7 +85,9 @@ internal sealed class DiskPane : PerformancePane
         return new Rectangle(ContentLeft, bottom - height, Math.Max(0, ContentRight - ContentLeft), height);
     }
 
-    /// <summary>From the first graph's top down to where the transfer graph's top captions sit 19 px below its bottom captions.</summary>
+    /// <summary>
+    /// From the first graph's top down to where the transfer graph's top captions sit 19 px below its bottom captions.
+    /// </summary>
     Rectangle Active(InfoLayout info)
     {
         var top = GraphBelowCaptions(CaptionY);
