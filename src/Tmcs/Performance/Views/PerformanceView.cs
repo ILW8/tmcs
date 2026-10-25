@@ -38,6 +38,7 @@ internal sealed class PerformanceView : Control
             {
                 DeviceKind.Cpu => new CpuPane(_fonts),
                 DeviceKind.Memory => new MemoryPane(_fonts),
+                DeviceKind.Disk => new DiskPane(_fonts),
                 _ => new TitlePane(_fonts),
             };
             _panes[i].Visible = false;
