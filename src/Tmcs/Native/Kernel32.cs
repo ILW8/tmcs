@@ -97,9 +97,21 @@ internal static unsafe partial class Kernel32
     [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     public static partial SafeFileHandle CreateFileW(string fileName, uint desiredAccess, uint shareMode, nint securityAttributes, uint creationDisposition, uint flagsAndAttributes, nint templateFile);
 
+    /// <summary>The overload for a path read on every tick: it allocates nothing, on success or failure.</summary>
+    /// <param name="fileName">Zero-terminated.</param>
+    /// <returns>The handle, or <see cref="InvalidHandleValue"/> on failure. The caller must <see cref="CloseHandle"/> it.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true)]
+    public static partial nint CreateFileW(char* fileName, uint desiredAccess, uint shareMode, nint securityAttributes, uint creationDisposition, uint flagsAndAttributes, nint templateFile);
+
+    public const nint InvalidHandleValue = -1;
+
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool DeviceIoControl(SafeFileHandle device, uint controlCode, void* inBuffer, uint inSize, void* outBuffer, uint outSize, out uint bytesReturned, nint overlapped);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeviceIoControl(nint device, uint controlCode, void* inBuffer, uint inSize, void* outBuffer, uint outSize, out uint bytesReturned, nint overlapped);
 
     /// <param name="name">Receives <c>\?\Volume{guid}\</c>, with a terminator.</param>
     /// <returns>A find handle for <see cref="FindVolumeClose"/>, or -1 on failure.</returns>

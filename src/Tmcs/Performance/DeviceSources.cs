@@ -23,11 +23,10 @@ internal sealed class DeviceSources(ICpuSource cpu, IMemorySource memory, IDiskS
     public static DeviceSources CreateReal() =>
         new(new PdhCpuSource(), new SystemMemorySource(), new SystemDiskSource(), new SystemNetworkSource(), new SystemGpuSource());
 
-    /// <summary>The memory source holds nothing to release.</summary>
+    /// <summary>The memory and disk sources hold nothing to release.</summary>
     public void Dispose()
     {
         Cpu.Dispose();
-        Disks.Dispose();
         Network.Dispose();
         Gpu.Dispose();
     }

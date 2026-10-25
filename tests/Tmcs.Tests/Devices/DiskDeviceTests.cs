@@ -113,7 +113,7 @@ public sealed class DiskDeviceTests
     [Fact]
     public void Real_listing_has_one_system_disk()
     {
-        using var source = new SystemDiskSource();
+        var source = new SystemDiskSource();
         var disks = source.Enumerate();
 
         Assert.NotEmpty(disks);
@@ -131,7 +131,7 @@ public sealed class DiskDeviceTests
     [Fact]
     public void Real_reads_work_without_elevation()
     {
-        using var source = new SystemDiskSource();
+        var source = new SystemDiskSource();
         var disks = source.Enumerate();
         Assert.NotEmpty(disks);
 
@@ -142,5 +142,63 @@ public sealed class DiskDeviceTests
             Assert.True(source.Read(d.Number, out var second));
             Assert.True(second.QueryTime > first.QueryTime);
         }
+    }
+
+    [Fact]
+    public void Real_source_keeps_no_handle_open()
+    {
+        // A handle left open on a disk vetoes its "Safely Remove". The first listing loads SetupAPI and the rest for good.
+        new SystemDiskSource().Enumerate();
+        var source = new SystemDiskSource();
+        var before = HandleCount();
+
+        var disks = source.Enumerate();
+        Assert.NotEmpty(disks);
+        foreach (var d in disks) Assert.True(source.Read(d.Number, out _));
+
+        Assert.Equal(before, HandleCount());
+    }
+
+    [Fact]
+    public void Real_read_does_not_allocate()
+    {
+        var source = new SystemDiskSource();
+        // An array, as a foreach over the listing's interface would box its enumerator.
+        var numbers = source.Enumerate().Select(d => d.Number).ToArray();
+        Assert.NotEmpty(numbers);
+        foreach (var n in numbers) source.Read(n, out _);
+
+        var allRead = true;
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 100; i++)
+        {
+            foreach (var n in numbers) allRead &= source.Read(n, out _);
+        }
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(allRead);
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void Real_failed_open_is_a_failed_read_and_does_not_allocate()
+    {
+        var source = new SystemDiskSource();
+        const string gone = @"\\?\tmcs-no-such-disk";
+        Assert.False(source.Read(gone, out var counters));
+        Assert.Equal(default, counters);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 100; i++) source.Read(gone, out _);
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
+
+    static int HandleCount()
+    {
+        // Finalizers close handles, so let them run first rather than during the measurement.
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        using var self = System.Diagnostics.Process.GetCurrentProcess();
+        return self.HandleCount;
     }
 }

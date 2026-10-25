@@ -5,7 +5,9 @@ namespace Tmcs.Devices.Disk;
 
 /// <summary>
 /// Disks come from the present <c>GUID_DEVINTERFACE_DISK</c> interfaces: probing <c>\\.\PhysicalDriveN</c> or PDH would also
-/// find the containers VHDX. Every handle is opened with access 0, so nothing here needs elevation.
+/// find the containers VHDX. Every handle is opened with access 0, so nothing here needs elevation. Between reads the source
+/// keeps each disk's interface path, not a handle: each read opens the disk and closes it again. A handle open on a disk makes
+/// its query-remove fail (PNP_VetoOutstandingOpen), so a USB disk couldn't be ejected while tmcs ran; Task Manager holds none.
 /// </summary>
 internal sealed unsafe class SystemDiskSource : IDiskSource
 {
@@ -20,27 +22,26 @@ internal sealed unsafe class SystemDiskSource : IDiskSource
 
     const int PerformanceSize = 88;     // sizeof(DISK_PERFORMANCE)
     const int ErrorMoreData = 234;
+    const uint Share = Kernel32.FileShareRead | Kernel32.FileShareWrite;
 
     // Allocated once; Read must not allocate.
     readonly byte[] _performance = GC.AllocateArray<byte>(PerformanceSize, pinned: true);
-    Dictionary<int, SafeFileHandle> _handles = [];
+
+    /// <summary>Each listed disk's interface path, by disk number.</summary>
+    Dictionary<int, string> _paths = [];
 
     public IReadOnlyList<DiskInfo> Enumerate()
     {
-        var handles = new Dictionary<int, SafeFileHandle>();
+        var paths = new Dictionary<int, string>();
         var disks = new List<DiskInfo>();
         var volumes = ReadVolumes(out var systemLetter);
         var pageFileLetters = ReadPageFileLetters();
 
         foreach (var path in InterfacePaths())
         {
-            var handle = Kernel32.CreateFileW(path, 0, Kernel32.FileShareRead | Kernel32.FileShareWrite, 0, Kernel32.OpenExisting, 0, 0);
-            if (handle.IsInvalid || !TryDeviceNumber(handle, out var number) || handles.ContainsKey(number))
-            {
-                handle.Dispose();
-                continue;
-            }
-            handles[number] = handle;
+            using var handle = Kernel32.CreateFileW(path, 0, Share, 0, Kernel32.OpenExisting, 0, 0);
+            if (handle.IsInvalid || !TryDeviceNumber(handle, out var number) || paths.ContainsKey(number)) continue;
+            paths[number] = path;
 
             volumes.TryGetValue(number, out var volume);
             var letters = volume?.Letters.Order(StringComparer.Ordinal).ToArray() ?? [];
@@ -55,10 +56,7 @@ internal sealed unsafe class SystemDiskSource : IDiskSource
                 Type: removable ? "Removable" : ReadIncursSeekPenalty(handle) ? "HDD" : "SSD"));
         }
 
-        var old = _handles;
-        _handles = handles;
-        foreach (var h in old.Values) h.Dispose();
-
+        _paths = paths;
         disks.Sort((a, b) => a.Number.CompareTo(b.Number));
         return disks;
     }
@@ -66,28 +64,37 @@ internal sealed unsafe class SystemDiskSource : IDiskSource
     public bool Read(int number, out DiskCounters counters)
     {
         counters = default;
-        if (!_handles.TryGetValue(number, out var handle)) return false;
-
-        fixed (byte* p = _performance)
-        {
-            if (!Kernel32.DeviceIoControl(handle, IoctlDiskPerformance, null, 0, p, PerformanceSize, out _, 0)) return false;
-            counters = new DiskCounters(
-                BytesRead: *(long*)(p + 0),
-                BytesWritten: *(long*)(p + 8),
-                ReadTime: *(long*)(p + 16),
-                WriteTime: *(long*)(p + 24),
-                IdleTime: *(long*)(p + 32),
-                ReadCount: *(uint*)(p + 40),
-                WriteCount: *(uint*)(p + 44),
-                QueryTime: *(long*)(p + 56));
-            return true;
-        }
+        return _paths.TryGetValue(number, out var path) && Read(path, out counters);
     }
 
-    public void Dispose()
+    /// <summary>Opens the disk at <paramref name="path"/> for this one IOCTL. A failed open is a failed read; neither allocates.</summary>
+    internal bool Read(string path, out DiskCounters counters)
     {
-        foreach (var h in _handles.Values) h.Dispose();
-        _handles = [];
+        counters = default;
+        nint handle;
+        fixed (char* name = path) handle = Kernel32.CreateFileW(name, 0, Share, 0, Kernel32.OpenExisting, 0, 0);
+        if (handle == Kernel32.InvalidHandleValue) return false;
+        try
+        {
+            fixed (byte* p = _performance)
+            {
+                if (!Kernel32.DeviceIoControl(handle, IoctlDiskPerformance, null, 0, p, PerformanceSize, out _, 0)) return false;
+                counters = new DiskCounters(
+                    BytesRead: *(long*)(p + 0),
+                    BytesWritten: *(long*)(p + 8),
+                    ReadTime: *(long*)(p + 16),
+                    WriteTime: *(long*)(p + 24),
+                    IdleTime: *(long*)(p + 32),
+                    ReadCount: *(uint*)(p + 40),
+                    WriteCount: *(uint*)(p + 44),
+                    QueryTime: *(long*)(p + 56));
+                return true;
+            }
+        }
+        finally
+        {
+            Kernel32.CloseHandle(handle);
+        }
     }
 
     sealed class VolumeInfo
@@ -201,7 +208,7 @@ internal sealed unsafe class SystemDiskSource : IDiskSource
 
     static void ReadVolume(string volume, Dictionary<int, VolumeInfo> result)
     {
-        using var handle = Kernel32.CreateFileW(volume.TrimEnd('\\'), 0, Kernel32.FileShareRead | Kernel32.FileShareWrite, 0, Kernel32.OpenExisting, 0, 0);
+        using var handle = Kernel32.CreateFileW(volume.TrimEnd('\\'), 0, Share, 0, Kernel32.OpenExisting, 0, 0);
         if (handle.IsInvalid) return;
 
         // VOLUME_DISK_EXTENTS: count u32 @0, then 24-byte extents from @8 (DiskNumber u32 @0, ExtentLength i64 @16).

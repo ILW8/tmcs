@@ -27,6 +27,4 @@ internal sealed class FakeDiskSource : IDiskSource
         counters = Counters;
         return Succeeds && !Failing.Contains(number);
     }
-
-    public void Dispose() { }
 }

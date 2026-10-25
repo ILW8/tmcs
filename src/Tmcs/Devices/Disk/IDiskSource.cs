@@ -17,9 +17,9 @@ internal readonly record struct DiskCounters(
     uint WriteCount,
     long QueryTime);
 
-internal interface IDiskSource : IDisposable
+internal interface IDiskSource
 {
-    /// <summary>Lists the present disks by number and replaces the source's open handles. Called at startup and when the disks may have changed.</summary>
+    /// <summary>Lists the present disks by number, the ones <see cref="Read"/> reads. Called at startup and when the disks may have changed.</summary>
     IReadOnlyList<DiskInfo> Enumerate();
 
     /// <summary>False means the read failed (the disk is gone or changed) and nothing was written.</summary>
