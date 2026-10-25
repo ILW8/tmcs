@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Tmcs.Devices;
 using Tmcs.Devices.Gpu;
@@ -23,7 +24,6 @@ public sealed partial class SidebarTests
     const string HiddenB = "{bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb}";
     const string HiddenAbsent = "{dddddddd-dddd-dddd-dddd-dddddddddddd}";
 
-    const uint WmKeyDown = 0x0100;
     const uint MfByPosition = 0x400;
     const uint MfGrayed = 0x1;
     const uint MfChecked = 0x8;
@@ -390,12 +390,14 @@ public sealed partial class SidebarTests
         form.ShowOffscreen();
         var sidebar = rig.Sidebar;
 
+        // WinForms adds the modifier keys held on the real keyboard to every key message, so a key the owner holds while the
+        // tests run would change the key. The test calls the sidebar's own key handling with exact key data instead.
+        var isInputKey = typeof(Control).GetMethod("IsInputKey", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var onKeyDown = typeof(Control).GetMethod("OnKeyDown", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
         // Input keys: they reach the sidebar instead of moving the focus to another control.
         foreach (var key in new[] { Keys.Up, Keys.Down })
-        {
-            var m = Message.Create(sidebar.Handle, (int)WmKeyDown, (nint)key, 0);
-            Assert.False(sidebar.PreProcessMessage(ref m));
-        }
+            Assert.True((bool)isInputKey.Invoke(sidebar, [key])!);
 
         Key(Keys.Up);
         Assert.Equal("cpu", sidebar.SelectedKey); // nothing above the first entry
@@ -417,7 +419,7 @@ public sealed partial class SidebarTests
         Assert.Equal("cpu", sidebar.SelectedKey);
         Assert.Equal(0, sidebar.AutoScrollPosition.Y);
 
-        void Key(Keys key) => User32.SendMessage(sidebar.Handle, WmKeyDown, (nint)key, 0);
+        void Key(Keys key) => onKeyDown.Invoke(sidebar, [new KeyEventArgs(key)]);
 
         void AssertInView(int index)
         {
