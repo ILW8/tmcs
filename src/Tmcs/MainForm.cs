@@ -266,7 +266,7 @@ internal class MainForm : Form, IScenarioTarget
             // Not from WindowState: WinForms may already have set it to Normal while the restore was under way.
             case WmWindowPosChanged:
                 var wasNormal = !_leftNormal;
-                _leftNormal = User32.IsIconic(Handle) || User32.IsZoomed(Handle);
+                _leftNormal = User32.IsIconic(m.HWnd) || User32.IsZoomed(m.HWnd);
                 if (wasNormal || _leftNormal) break;
                 _restoringToNormal = true;
                 try
@@ -287,7 +287,8 @@ internal class MainForm : Form, IScenarioTarget
     /// Windows has already put a window it restores back at its normal place and size. WinForms then sets the bounds it saved
     /// when the window left normal, and before Windows 11 it saved the client size, which it turns back into a window size
     /// without the menu bar: it knows nothing of the native menu. The window lost the menu bar's height on every restore and was
-    /// laid out twice, so a restore keeps the bounds Windows gave it.
+    /// laid out twice, so a restore keeps the bounds Windows gave it. Bounds set while the window is minimized or maximized are
+    /// therefore not applied at the restore: set them after it.
     /// </summary>
     protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
     {

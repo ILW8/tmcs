@@ -113,12 +113,14 @@ public sealed partial class MainFormTests
         var view = rig.Form.PerformanceView;
         Assert.True(view.Sidebar.SelectFirst(DeviceKind.Disk)); // away from CPU, on the other tab, minimized and paused
         SelectTab(rig.Form, "Details");
+        var window = rig.Form.WindowRect;
         target.Apply(ScenarioAction.Minimized);
         rig.Form.Command(CommandIds.SpeedPaused);
 
         target.Apply(ScenarioAction.Cpu);
 
         Assert.Equal(FormWindowState.Normal, rig.Form.WindowState);
+        Assert.Equal(window, rig.Form.WindowRect); // the soak's restore keeps the size too
         Assert.Equal("Performance", Tabs(rig.Form).SelectedTab!.Text);
         Assert.Equal("cpu", view.Sidebar.SelectedKey);
         Assert.Same(view.Panes[(int)DeviceKind.Cpu], view.VisiblePane);

@@ -83,9 +83,9 @@ internal abstract class PerformancePane : ScrollableControl
     public int InfoBottom => Math.Max(ClientSize.Height, _fonts.Scale(ContentHeight)) - _fonts.Scale(20);
 
     /// <summary>
-    /// Repaints asked for since the pane was created: each is one paint on screen. Tests count them to check that hidden panes
-    /// are left alone. Not counted in OnPaint: off-screen, where tests run, every update rectangle is empty, and WinForms skips
-    /// OnPaint for those.
+    /// Repaints asked for since the pane's window was made: each is one paint on screen while the pane can be seen. Tests count
+    /// them to check that panes that cannot be seen are left alone. Not counted in OnPaint: off-screen, where tests run, every
+    /// update rectangle is empty, and WinForms skips OnPaint for those.
     /// </summary>
     internal int RepaintCount { get; private set; }
 

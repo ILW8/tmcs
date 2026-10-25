@@ -181,6 +181,23 @@ internal sealed partial class OffscreenMainForm : MainForm
     }
 
     /// <summary>
+    /// Moves the place a minimized window restores to, as a monitor or DPI change while it is minimized would. It stays
+    /// minimized. <paramref name="normal"/> is in screen coordinates, as for every tool window.
+    /// </summary>
+    public void MoveNormalPositionWhileMinimized(Rectangle normal)
+    {
+        Assert.True(User32.IsIconic(Handle));
+        var placement = CurrentPlacement();
+        placement.Flags = 0;
+        placement.ShowCmd = SwShowMinNoActive;
+        placement.NormalPosition = new NativeRect { Left = normal.Left, Top = normal.Top, Right = normal.Right, Bottom = normal.Bottom };
+        Assert.True(SetWindowPlacement(Handle, ref placement));
+        Application.DoEvents();
+        Assert.True(User32.IsIconic(Handle));
+        AssertOffscreenAndInactive();
+    }
+
+    /// <summary>
     /// The form's own minimize, used by test mode's scenario as well as <see cref="MinimizeWithoutActivation"/>: the same
     /// no-activate show command, given through <c>SetWindowPlacement</c> with the minimized position pinned off-screen. A window
     /// with no taskbar button would otherwise minimize to a small caption in the corner of a real screen.

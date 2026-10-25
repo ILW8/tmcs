@@ -444,6 +444,26 @@ public sealed partial class MainFormTests : IDisposable
     });
 
     [Fact]
+    public void Restoring_takes_the_place_windows_restores_to_when_it_moved_while_minimized() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        var moved = rig.Form.WindowRect;
+        moved.Offset(100, 100);
+        moved.Size += new Size(60, 40);
+        var resizes = 0;
+        rig.Form.PerformanceView.Resize += (_, _) => resizes++;
+
+        rig.Form.MinimizeWithoutActivation();
+        rig.Form.MoveNormalPositionWhileMinimized(moved);
+        resizes = 0;
+        rig.Form.RestoreWithoutActivation();
+
+        Assert.Equal(moved, rig.Form.WindowRect);
+        Assert.Equal(1, resizes);
+    });
+
+    [Fact]
     public void Failed_snapshot_keeps_the_last_rows() => Sta.Run(() =>
     {
         using var rig = new Rig(SettingsPath);
