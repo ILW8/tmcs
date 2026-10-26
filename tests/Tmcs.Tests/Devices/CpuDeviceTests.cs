@@ -81,6 +81,15 @@ public class CpuDeviceTests
         Assert.Equal(DeviceKind.Cpu, cpu.Kind);
     }
 
+    // AMD pads the brand string to 47 characters. Task Manager shows the owner's 7950X with one space after it, not 12.
+    [Theory]
+    [InlineData("AMD Ryzen 9 7950X 16-Core Processor            ", "AMD Ryzen 9 7950X 16-Core Processor ")]
+    [InlineData("AMD Ryzen 9 7950X 16-Core Processor ", "AMD Ryzen 9 7950X 16-Core Processor ")]
+    [InlineData("Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz", "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz")]
+    [InlineData("", "")]
+    public void Trailing_spaces_in_the_name_show_as_one(string registry, string shown) =>
+        Assert.Equal(shown, PdhCpuSource.DisplayName(registry));
+
     [Fact]
     public void Real_source_reads_every_logical_processor()
     {

@@ -159,14 +159,23 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
 
     static double Clamp(double value) => double.IsNaN(value) ? 0 : Math.Clamp(value, 0, 100);
 
+    /// <summary>
+    /// The registry name with any run of trailing spaces cut to one. AMD pads its brand string to 47 characters, and Task
+    /// Manager shows the 7950X's 12 trailing spaces as one, so the right-aligned name ends one space short of the edge.
+    /// </summary>
+    internal static string DisplayName(string registryName)
+    {
+        var trimmed = registryName.TrimEnd(' ');
+        return trimmed.Length < registryName.Length ? trimmed + " " : registryName;
+    }
+
     static CpuInfo ReadInfo()
     {
         string name;
         double baseMhz;
         using (var key = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0"))
         {
-            // Kept as is: the name has a trailing space on some machines, and Task Manager shows it too.
-            name = key?.GetValue("ProcessorNameString") as string ?? "";
+            name = DisplayName(key?.GetValue("ProcessorNameString") as string ?? "");
             baseMhz = key?.GetValue("~MHz") is int mhz ? mhz : 0;
         }
 

@@ -197,6 +197,12 @@ How these were identified:
 | Network | `Throughput` / `100 Kbps` or `500 Kbps` | at 519 (Wi-Fi 504) |
 | GPU | `Dedicated GPU memory usage` / `24.0 GB` at (255,344); `Shared GPU memory usage` / `31.8 GB` at (255,431) | none; the right edge is 1243 |
 
+**Rate-graph scale** (Disk transfer rate, Network throughput):
+
+- tmcs uses the smallest step at or above the visible maximum (`GraphScales`). So one sample above the scale changes it, and the scale drops back once that sample leaves the window.
+- Task Manager waits before it changes the scale. The owner saw a network graph at 10 Mbps take 5–10 samples above 10 Mbps before its scale showed them.
+- **tmcs differs on purpose (owner's preference, 2026-10-26).**
+
 **Inner scale marker** (Disk transfer rate in 07; Throughput in 10):
 
 - **Line:** a 1-px horizontal line across the interior, x left+1 to right−1.
@@ -245,6 +251,7 @@ All text is **Segoe UI Regular** rendered by GDI ClearType (colored fringes, so 
   - Disk shows the model (`Sabrent Rocket Q`).
   - Network shows the adapter description (`HP NC550SFP Dual Port 10GbE Server Adapter #2`), while the sidebar shows the connection name.
   - The CPU string carries a trailing space (`AMD Ryzen 9 7950X 16-Core Processor `), so its ink ends 4 px before 1262.
+    - The registry's `ProcessorNameString` has 12 trailing spaces there, because AMD pads its brand string to 47 characters. tmcs cuts a run of trailing spaces to one, as Task Manager shows it. Drawn with all 12, the name ended about 45 px before the edge. (Found in the owner's fidelity check on 2026-10-26.)
 - **Text origin:** text is drawn at its dump rect's top left (TextOut origin). The exceptions are static-table text and sidebar sub lines, which sit 2 px and 1 px right of their rects.
 
 ## 6. Pane-specific pieces
