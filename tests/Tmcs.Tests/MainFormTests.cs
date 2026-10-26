@@ -768,13 +768,26 @@ public sealed partial class MainFormTests : IDisposable
         public readonly DeviceSources Devices = FakeDeviceSources.Create();
         public readonly OffscreenMainForm Form;
 
+        // File ▸ Run new task's seam is static, so the rig replaces it for its lifetime and puts the real one back. Tests never run in
+        // parallel, so no other test sees the stand-in.
+        private readonly Action<nint, nint> _runDialog = RunNewTask.ShowDialog;
+
         public Rig(string settingsPath, LaunchOptions? options = null)
         {
-            var services = new AppServices(Snapshots, new FakeInfo(), Icons, Icons.CreateGeneric(), Timer, new SettingsStore(settingsPath), options ?? new LaunchOptions(null, null), Devices, new FakeProcessActions());
-            Form = new OffscreenMainForm(services);
+            RunNewTask.ShowDialog = (_, _) => throw new InvalidOperationException("the test would have shown the shell's Run dialog");
+            try
+            {
+                var services = new AppServices(Snapshots, new FakeInfo(), Icons, Icons.CreateGeneric(), Timer, new SettingsStore(settingsPath), options ?? new LaunchOptions(null, null), Devices, new FakeProcessActions());
+                Form = new OffscreenMainForm(services);
+            }
+            catch
+            {
+                RunNewTask.ShowDialog = _runDialog;
+                throw;
+            }
         }
 
-        /// <summary>Checks the window one last time, unless the test closed it, then disposes it.</summary>
+        /// <summary>Checks the window one last time, unless the test closed it, then disposes it and puts the Run dialog seam back.</summary>
         public void Dispose()
         {
             try
@@ -783,7 +796,14 @@ public sealed partial class MainFormTests : IDisposable
             }
             finally
             {
-                Form.Dispose();
+                try
+                {
+                    Form.Dispose();
+                }
+                finally
+                {
+                    RunNewTask.ShowDialog = _runDialog;
+                }
             }
         }
     }

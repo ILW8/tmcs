@@ -5,8 +5,12 @@ using System.Runtime.InteropServices;
 namespace Tmcs.Tests.Support;
 
 /// <summary>
-/// Runs test bodies that show modal UI (a TaskDialog, the shell's Run dialog, the affinity dialog) on a desktop of their own.
-/// The desktop is never switched to, so nothing the body shows reaches the user's screen, and a modal loop needs no one to answer it.
+/// Runs test bodies that show modal UI (a TaskDialog, the affinity dialog) on a desktop of their own. The desktop is never switched
+/// to, so nothing the body's thread shows reaches the user's screen, and a modal loop needs no one to answer it.
+/// Only windows created by the body's own thread land on the hidden desktop. A window made on another thread, or in another
+/// process, appears on the user's normal desktop. So a test must never call, even here, <c>RunNewTask.Show</c> (the shell's Run
+/// dialog runs on a thread <c>SHCreateThread</c> starts), the shell's Explorer or Properties windows, or anything else that shows a
+/// window from another thread or process.
 /// </summary>
 internal static partial class HiddenDesktop
 {
