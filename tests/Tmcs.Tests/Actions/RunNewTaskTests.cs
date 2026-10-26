@@ -67,7 +67,7 @@ public class RunNewTaskTests
         }, () => Notify("calc", null, 0));
 
         Assert.Equal(1, result);
-        Assert.Equal([("calc", (string?)null, 0u)], calls);
+        Assert.Equal([("calc", null, 0u)], calls);
     }
 
     [Fact]

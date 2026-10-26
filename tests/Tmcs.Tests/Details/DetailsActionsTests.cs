@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using Tmcs.Actions;
@@ -450,7 +449,7 @@ public partial class DetailsActionsTests
         rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(2)]);
 
         Assert.Equal([("alpha.exe", new AffinityInfo(0b0110, 0b1111))], rig.AffinityAsks);
-        Assert.Equal([(rig.Row(2).Id, (nuint)0b0101)], rig.Actions.AffinitySets);
+        Assert.Equal([(rig.Row(2).Id, 0b0101)], rig.Actions.AffinitySets);
         Assert.Empty(rig.Errors);
         Assert.Empty(rig.Confirms); // Set affinity has no confirmation
 
@@ -677,9 +676,9 @@ public partial class DetailsActionsTests
                 Confirms.Add((kind, count, singleName, critical, criticalName));
                 return ConfirmAnswer;
             };
-            View.ChooseAffinity = (name, info) =>
+            View.ChooseAffinity = (name, affinity) =>
             {
-                AffinityAsks.Add((name, info));
+                AffinityAsks.Add((name, affinity));
                 return AffinityAnswer;
             };
             View.ShowError = (kind, outcome, isElevated) => Errors.Add((kind, outcome, isElevated));

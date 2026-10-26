@@ -289,14 +289,14 @@ internal sealed class DetailsView : UserControl, ICellSource
     /// </summary>
     internal void LayoutBand(int dpi)
     {
-        int Scale(int units) => (int)Math.Round(units * dpi / 96.0, MidpointRounding.AwayFromZero);
+        int Scaled(int units) => (int)Math.Round(units * dpi / 96.0, MidpointRounding.AwayFromZero);
 
         var width = ClientSize.Width;
-        var band = Scale(BandHeight);
+        var band = Scaled(BandHeight);
         var top = Math.Max(0, ClientSize.Height - band);
         SuspendLayout(); // a child's new bounds would otherwise lay this view out again, at its own DPI
         _list.Bounds = new Rectangle(0, 0, width, top);
-        _endTask.Bounds = new Rectangle(width - Scale(ButtonRightMargin) - Scale(ButtonWidth), top + Scale(ButtonTop), Scale(ButtonWidth), Scale(ButtonHeight));
+        _endTask.Bounds = new Rectangle(width - Scaled(ButtonRightMargin) - Scaled(ButtonWidth), top + Scaled(ButtonTop), Scaled(ButtonWidth), Scaled(ButtonHeight));
         ResumeLayout(false);
     }
 

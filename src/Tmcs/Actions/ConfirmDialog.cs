@@ -17,6 +17,9 @@ internal static unsafe class ConfirmDialog
     public const int CustomButtonId = 1;
 
     /// <summary>Asks before <paramref name="kind"/> acts on <paramref name="count"/> rows.</summary>
+    /// <param name="owner">The window the dialog is modal to, or null for none.</param>
+    /// <param name="kind">The command asking.</param>
+    /// <param name="count">How many rows it acts on.</param>
     /// <param name="singleName">The one row's name, used when <paramref name="count"/> is 1.</param>
     /// <param name="critical">One of the rows is a critical system process: the shutdown text replaces the command's.</param>
     /// <param name="criticalName">That process's name.</param>
@@ -24,11 +27,18 @@ internal static unsafe class ConfirmDialog
     public static bool Show(IWin32Window? owner, ConfirmKind kind, int count, string? singleName, bool critical, string? criticalName) =>
         Show(owner?.Handle ?? 0, kind, count, singleName, critical, criticalName, onCreated: null);
 
+    /// <summary>The public <c>Show</c>, taking the owner as a handle.</summary>
+    /// <param name="owner">The owner window's handle, or 0 for none.</param>
+    /// <param name="kind">As in the public <c>Show</c>.</param>
+    /// <param name="count">As in the public <c>Show</c>.</param>
+    /// <param name="singleName">As in the public <c>Show</c>.</param>
+    /// <param name="critical">As in the public <c>Show</c>.</param>
+    /// <param name="criticalName">As in the public <c>Show</c>.</param>
     /// <param name="onCreated">
     /// Tests only: runs with the dialog's window on <c>TDN_CREATED</c>, where a test answers the dialog. It must not throw.
     /// </param>
     internal static bool Show(nint owner, ConfirmKind kind, int count, string? singleName, bool critical, string? criticalName, Action<nint>? onCreated) =>
-        Build(owner, kind, count, singleName, critical, criticalName, onCreated, static (in ComCtl32.TaskDialogConfig config) =>
+        Build(owner, kind, count, singleName, critical, criticalName, onCreated, static (in config) =>
             // A dialog that failed to show confirms nothing.
             ComCtl32.TaskDialogIndirect(config, out var button, null, null) >= 0 && button == CustomButtonId);
 

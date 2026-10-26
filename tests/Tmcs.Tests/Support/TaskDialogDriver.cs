@@ -25,7 +25,7 @@ internal sealed unsafe partial class TaskDialogDriver : IDisposable
     nint _open;
     int _opened, _openedAtLastTick;
 
-    /// <summary>The button <see cref="Activated"/> presses on a dialog that only has a window (a <c>TaskDialog</c>, which has no callback).</summary>
+    /// <summary>The button <see cref="CbtProc"/> presses on a dialog that only has a window (a <c>TaskDialog</c>, which has no callback).</summary>
     public int Press { get; set; }
 
     /// <summary>Set once the watchdog had to end a dialog.</summary>

@@ -22,7 +22,7 @@ public class ProcessorAffinityDialogTests
     [Fact]
     public void Lists_all_processors_then_each_cpu() => Sta.Run(() =>
     {
-        using var dialog = Make(0xFF);
+        using var dialog = Make();
 
         Assert.Equal(
             ["<All Processors>", "CPU 0", "CPU 1", "CPU 2", "CPU 3", "CPU 4", "CPU 5", "CPU 6", "CPU 7"],
@@ -62,7 +62,7 @@ public class ProcessorAffinityDialogTests
     [Fact]
     public void All_processors_toggles_every_cpu() => Sta.Run(() =>
     {
-        using var dialog = Make(0xFF, processMask: 0b11);
+        using var dialog = Make(processMask: 0b11);
         var items = dialog.List.Items;
 
         items[0].Checked = true;
@@ -90,7 +90,7 @@ public class ProcessorAffinityDialogTests
     [Fact]
     public void Ok_is_disabled_with_nothing_checked() => Sta.Run(() =>
     {
-        using var dialog = Make(0xFF, processMask: 0b100);
+        using var dialog = Make(processMask: 0b100);
         Assert.True(dialog.OkButton.Enabled);
 
         dialog.List.Items[3].Checked = false; // CPU 2, the only one
@@ -116,7 +116,7 @@ public class ProcessorAffinityDialogTests
     [Fact]
     public void Seeded_mask_checks_the_current_cpus() => Sta.Run(() =>
     {
-        using var dialog = Make(0xFF, processMask: 0b1010);
+        using var dialog = Make(processMask: 0b1010);
 
         Assert.Equal([false, false, true, false, true, false, false, false, false], Checks(dialog));
         Assert.Equal((nuint)0b1010, dialog.Mask);
@@ -132,7 +132,7 @@ public class ProcessorAffinityDialogTests
     [Fact]
     public void Chosen_mask_reflects_the_checks() => Sta.Run(() =>
     {
-        using var dialog = Make(0xFF, processMask: 0xFF);
+        using var dialog = Make();
         dialog.List.Items[0].Checked = false;
 
         dialog.List.Items[1].Checked = true; // CPU 0
@@ -144,7 +144,7 @@ public class ProcessorAffinityDialogTests
     [Fact]
     public void Column_fills_the_list_so_every_row_has_a_label() => Sta.Run(() =>
     {
-        using var dialog = Make(0xFF);
+        using var dialog = Make();
 
         Assert.True(dialog.List.ClientSize.Width > 0);
         Assert.Equal(dialog.List.ClientSize.Width, dialog.List.Columns[0].Width);

@@ -12,6 +12,9 @@ internal enum ErrorKind { EndTask, EndProcessTree, SetPriority, Affinity }
 internal static unsafe class ErrorDialog
 {
     /// <summary>Shows why <paramref name="kind"/> failed with <paramref name="outcome"/>.</summary>
+    /// <param name="owner">The window the dialog is modal to, or null for none.</param>
+    /// <param name="kind">The command that failed.</param>
+    /// <param name="outcome">Its outcome, which words the dialog.</param>
     /// <param name="isElevated">tmcs runs elevated: access denied then reads as the system's message, not "run it as an administrator".</param>
     public static void Show(IWin32Window? owner, ErrorKind kind, ActionOutcome outcome, bool isElevated)
     {
@@ -52,9 +55,9 @@ internal static unsafe class ErrorDialog
     /// </summary>
     internal static string SystemMessage(int hresult)
     {
-        const int Capacity = 1024;
-        var buffer = stackalloc char[Capacity];
-        var length = Kernel32.FormatMessageW(Kernel32.FormatMessageFromSystem | Kernel32.FormatMessageIgnoreInserts, 0, (uint)hresult, 0, buffer, Capacity, 0);
+        const int capacity = 1024;
+        var buffer = stackalloc char[capacity];
+        var length = Kernel32.FormatMessageW(Kernel32.FormatMessageFromSystem | Kernel32.FormatMessageIgnoreInserts, 0, (uint)hresult, 0, buffer, capacity, 0);
         var text = new string(buffer, 0, (int)length).Trim();
         return text.Length > 0 ? text : $"0x{hresult:X8}";
     }
