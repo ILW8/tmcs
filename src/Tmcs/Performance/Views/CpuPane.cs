@@ -31,6 +31,7 @@ internal sealed class CpuPane : PerformancePane
     readonly StaticRow[] _table = new StaticRow[8];
     readonly Func<string, int> _labelWidth, _valueWidth;
 
+    /// <param name="fonts">The view's fonts, which the view owns.</param>
     /// <param name="settings">Whether Utilization is Linux-style.</param>
     public CpuPane(PaneFonts fonts, AppSettings settings) : base(fonts)
     {
