@@ -260,18 +260,20 @@ public sealed partial class MainFormTests : IDisposable
         var history = rig.Form.Performance.Cpu.History;
         Assert.Equal(1, history.Count); // the first sample, as the window loaded
 
+        // These samples may come under History.MinSpacing100Ns apart and fold into one point, so each must move its time on.
         var tabs = Tabs(rig.Form);
-        var expected = history.Count;
+        var latest = history.LatestTime;
         foreach (TabPage page in tabs.TabPages)
         {
             SelectTab(rig.Form, page.Text);
             rig.Timer.Fire();
-            Assert.Equal(++expected, history.Count);
+            Assert.True(history.LatestTime > latest, page.Text);
+            latest = history.LatestTime;
         }
 
         rig.Form.MinimizeWithoutActivation();
         rig.Timer.Fire();
-        Assert.Equal(++expected, history.Count);
+        Assert.True(history.LatestTime > latest);
     });
 
     [Fact]
