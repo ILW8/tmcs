@@ -20,7 +20,9 @@
 - `docs/superpowers/reference/2026-10-24-taskmgr-performance-look.md`: section on the command-bar band (the empty 48-px band at the pane bottom) is the precedent for the Details tab's End task button band.
 - A Details-tab capture of the owner's Task Manager, saved by `tools/capture-taskmgr.ps1` into `artifacts/reference/taskmgr/` in Task 5. That folder is git-ignored; the images are Microsoft's UI and are never committed.
 
-**Milestone order and the early stop:** Tasks 1–5 build the probes and helpers, the actions service, the confirmation and error dialogs, the row menu with End task / End process tree / Delete / multi-select, and the End task button. **Task 6 stops execution** so the owner can try ending processes before the rest is built (owner's choice). Tasks 7–10 add Set priority, Set affinity, Open file location / Properties / Copy, and Run new task. Task 11 runs the acceptance tests once, for the whole milestone.
+**Milestone order and the checkpoint:** Tasks 1–5 build the probes and helpers, the actions service, the confirmation and error dialogs, the row menu with End task / End process tree / Delete / multi-select, and the End task button. **Task 6 is a checkpoint** where the ending features are ready to try. It was a STOP in the plan as approved; the owner chose (2026-10-26) to run the implementation unattended overnight, so Task 6 now writes the checkpoint notes and continues to Task 7 without waiting. Tasks 7–10 add Set priority, Set affinity, Open file location / Properties / Copy, and Run new task. Task 11 runs the acceptance tests once, for the whole milestone.
+
+**Unattended-run rule (this execution):** the executor is running overnight with no one at the screen. The owner rule "announce before any UAC prompt and wait for 'ready'" is absolute, so the executor **never triggers a UAC prompt and never waits for the owner**. Every owner-gated or elevation-gated step uses its documented fallback or is deferred with a clear note in the results file for the owner to run in the morning. This affects Task 5 (the Details capture) and Task 11 (the elevated soak, idle-cost and fidelity).
 
 ## Global Constraints
 
@@ -39,7 +41,7 @@
   - Never add a feature, menu item or setting the spec doesn't list. Copy is the one spec-listed addition (spec 4.2). Ask first about anything else.
   - Test and diagnostic knobs are `TMCS_*` environment variables, never command-line flags.
   - Use the Rider MCP inspections (`lint_files`, `get_file_problems`) when reviewing. Analysis only; a worktree needs its own `.slnx` open in Rider.
-- Commits: author `ILW8 <ilw8@41f.dev>` on branch `feat/tmcs-m3`. End every commit message with `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. `artifacts/` is never committed.
+- Commits: author `ILW8 <ilw8@41f.dev>` on branch `feat/tmcs-m3`. End every commit message with the Co-Authored-By line from the session's own attribution reminder — the model doing the work (the implementation session is Opus 5.5, so `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`). `artifacts/` is never committed.
 
 ## Review Focus
 
@@ -259,7 +261,7 @@ The End task button sits at the bottom right of the Details tab (spec 4.2). Its 
   - `tools/capture-taskmgr.ps1` gains a mode that, with Task Manager on the Details tab, saves `details.png` and `details.txt` (the element dump with bounds) into `artifacts/reference/taskmgr/`, by the same MSAA + `PrintWindow` path it uses for the panes. It never moves the mouse, activates or takes focus.
   - `DetailsView` lays out the list above a bottom band holding a right-aligned End task button, in 96-DPI units scaled by `DeviceDpi / 96`, to the band height and button metrics the capture gives (the look reference's command-bar band is the precedent). The button is enabled only when the selection is non-empty, and its `Click` runs the Task 4 End task flow on the current selection.
 
-- [ ] **Step 1: Announce and capture.** Tell the owner a UAC prompt is coming to run `tools/capture-taskmgr.ps1` elevated against their Task Manager's Details tab, and **wait for "ready"**. Then run it, and record the band and button geometry in the reference doc. (If the owner prefers not to, fall back to the owner's screenshot or, failing that, the look reference's 48-px band with a standard button; note the fallback.)
+- [ ] **Step 1: Capture (attended) or fall back (unattended).** Attended: tell the owner a UAC prompt is coming to run `tools/capture-taskmgr.ps1` elevated against their Task Manager's Details tab, **wait for "ready"**, then run it and record the band and button geometry in the reference doc. **Unattended (this run): do not prompt for UAC and do not wait.** Use the fallback — the look reference's command-bar band height (48 px) with a standard right-aligned End task button — and record in the reference doc and the results file that the exact Task Manager geometry is still to be captured, so the owner can refine it later. Still extend `tools/capture-taskmgr.ps1` with the Details-tab mode (it is run elevated by the owner later); only the capture *run* is deferred.
 - [ ] **Step 2: Write the failing tests** in `DetailsActionsTests`:
   - `End_task_button_disabled_without_a_selection` / `enabled_with_a_selection`.
   - `End_task_button_ends_the_selection`: clicking it runs the same flow as the menu's End task (assert via the fake).
@@ -271,22 +273,18 @@ The End task button sits at the bottom right of the Details tab (spec 4.2). Its 
 
 ---
 
-### Task 6: STOP — the owner tries ending processes
+### Task 6: Checkpoint — the ending features are ready to try
 
-**This task ends the turn. Do not start Task 7 until the owner says to go on.** The owner chose this stop so they can try the row menu, End task, End process tree, the End task button and Delete before the rest is built.
+The ending features (row menu, End task, End process tree, Delete, multi-select, the End task button) are complete here. This was a STOP in the plan as approved, so the owner could try them before the rest was built; the owner changed it to a **non-blocking checkpoint** (2026-10-26) for the unattended run. Write the notes and continue to Task 7 without waiting.
 
 **Files:**
 - Create: `docs/superpowers/results/2026-10-26-m3-actions.md` (the "Checkpoint" section; Task 11 completes the file)
 
 - [ ] **Step 1: Check the build.** `dotnet test` (all PASS) and `dotnet build src/Tmcs -c Debug`.
 - [ ] **Step 2: Inspect.** Run the Rider inspections (`lint_files`) on every file changed since the branch point, and fix what they report in those files. If the Rider MCP is unavailable, note it and skip.
-- [ ] **Step 3: Write the checkpoint section**: what the owner should try, and the "Calls for the owner to check" entries that belong to Tasks 1–5, so they can check them while trying.
+- [ ] **Step 3: Write the checkpoint section** so the owner can try the build whenever they return: the Debug build path (`src/Tmcs/bin/Debug/net10.0-windows/win-x64/tmcs.exe`, `asInvoker`, so access-denied on a protected process is expected and shows the "need administrator" dialog; the Release build ends them), what to compare beside Task Manager (the row menu, the confirmation and error dialogs, End task, End process tree, Delete, multi-select, the End task button), a **warning that these actually end processes** so they pick disposable ones, and the "Calls for the owner to check" entries for Tasks 1–5.
 - [ ] **Step 4: Commit** with message `docs: M3 checkpoint notes`.
-- [ ] **Step 5: Hand over, then stop.**
-  - Tell the owner the Debug build is at `src/Tmcs/bin/Debug/net10.0-windows/win-x64/tmcs.exe`. It is `asInvoker`, so access-denied on a protected process is expected and shows the "need administrator" dialog; the Release build ends them.
-  - Ask them to run it beside Task Manager and compare the row menu, the confirmation and error dialogs, End task, End process tree, Delete, multi-select and the End task button. **Warn them that these actually end processes**, so they should pick disposable ones.
-  - **Then end the turn.**
-- [ ] **Step 6: When the owner answers:** record their notes, fix what they ask for within the spec (each with its own test and commit), ask first about anything outside the spec, and go on to Task 7 only when they say so.
+- [ ] **Step 5: Continue to Task 7.** Do not wait for the owner. (If the owner is present and asks to pause here, honor that; unattended, keep going.)
 
 ---
 
@@ -406,6 +404,8 @@ The End task button sits at the bottom right of the Details tab (spec 4.2). Its 
 ### Task 11: Publish and milestone-3 acceptance
 
 Run spec section 9's tests for the whole milestone. M1's and M2's results files show how each was run; follow them except where this task says otherwise. Milestone 3 adds no Performance panes, so the soak scenario is M2's, re-run to confirm the actions didn't regress the flatness. The actions' own leak tests are the 1000×-open-and-cancel tests in Tasks 3 and 8 and the live-end tests in Task 2, which `dotnet test` already runs.
+
+**Unattended run (this execution):** do only the steps that need no UAC and no owner — Step 1 (build/publish), the non-elevated Debug soak part of Step 3, and Step 8 (README). **Defer** the elevated soak (Step 3's elevated run), the idle-cost comparison (Step 4), and the fidelity check (Step 6), because each needs a UAC prompt or the owner at the screen; leave them as clearly-marked TODOs in the results file. Never announce UAC or wait for the owner when no one is there. Complete Step 7's results file with what did run and what is deferred, and Step 9's commit. The branch is left unpushed with no PR, for the owner to review in the morning.
 
 **Files:**
 - Modify: `docs/superpowers/results/2026-10-26-m3-actions.md` (begun in Task 6), `README.md` (the Run new task item and the Details actions)
