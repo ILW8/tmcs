@@ -2,10 +2,11 @@ using Tmcs.Sampling;
 
 namespace Tmcs.Ui;
 
-/// <summary>The command ids of the main menu items, as <c>WM_COMMAND</c> reports them, and of the sidebar's menu.</summary>
+/// <summary>The command ids of the main menu items, as <c>WM_COMMAND</c> reports them, and of the sidebar's and the Details rows' menus.</summary>
 internal static class CommandIds
 {
     public const int Exit = 100;
+    public const int RunNewTask = 101;
     public const int AlwaysOnTop = 200;
     public const int RefreshNow = 300;
 
@@ -20,6 +21,24 @@ internal static class CommandIds
 
     /// <summary>The sidebar menu's check item that shows the hidden adapters for the session.</summary>
     public const int ShowHiddenAdapters = 401;
+
+    // The Details row menu (reference 1.2).
+    public const int EndTask = 500;
+    public const int EndProcessTree = 501;
+
+    // The six priorities must stay contiguous, Realtime first and Low last, as the menu lists them: CheckMenuRadioItem takes them as one range.
+    public const int PriorityRealtime = 510;
+    public const int PriorityHigh = 511;
+    public const int PriorityAboveNormal = 512;
+    public const int PriorityNormal = 513;
+    public const int PriorityBelowNormal = 514;
+    public const int PriorityLow = 515;
+
+    public const int SetAffinity = 520;
+    public const int OpenFileLocation = 521;
+    public const int Properties = 522;
+    public const int CopyPid = 530;
+    public const int CopyImagePath = 531;
 
     /// <summary>The Update speed item for <paramref name="speed"/>.</summary>
     public static int ForSpeed(UpdateSpeed speed) => SpeedHigh + (int)speed;

@@ -113,7 +113,7 @@ internal class MainForm : Form, IScenarioTarget
         _performanceView.SettingsChanged += (_, _) => ScheduleSave();
         _performancePage = new TabPage("Performance");
         _performancePage.Controls.Add(_performanceView);
-        _details = new DetailsView(_table, _images, _settings) { Dock = DockStyle.Fill };
+        _details = new DetailsView(_table, _images, _settings, services.Actions) { Dock = DockStyle.Fill };
         _details.SettingsChanged += (_, _) => ScheduleSave();
         _detailsPage = new TabPage("Details");
         _detailsPage.Controls.Add(_details);

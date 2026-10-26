@@ -16,6 +16,12 @@ internal static partial class User32
     /// <summary><c>LVM_GETNEXTITEM</c>: wParam is the item to start after (-1 for the first), lParam the <c>LVNI_*</c> flags; returns the item or -1.</summary>
     public const uint LvmGetNextItem = 0x100C;
 
+    /// <summary><c>LVM_GETITEMRECT</c>: wParam is the item, lParam a <see cref="NativeRect"/> whose <c>Left</c> holds an <c>LVIR_*</c> value on entry; returns nonzero on success.</summary>
+    public const uint LvmGetItemRect = 0x100E;
+
+    /// <summary><c>LVIR_BOUNDS</c>: the whole row, every column included.</summary>
+    public const int LvirBounds = 0;
+
     /// <summary><c>LVM_GETHEADER</c>: returns the header control's handle.</summary>
     public const uint LvmGetHeader = 0x101F;
 
@@ -126,6 +132,9 @@ internal static partial class User32
 
     /// <summary><c>MF_BYCOMMAND</c>: the item is named by its command id, which also searches submenus.</summary>
     public const uint MfByCommand = 0x0;
+
+    /// <summary><c>MF_BYPOSITION</c>: the item is named by its zero-based position in the menu. A submenu's item can only be named so.</summary>
+    public const uint MfByPosition = 0x400;
 
     /// <summary><c>MF_GRAYED</c>.</summary>
     public const uint MfGrayed = 0x1;

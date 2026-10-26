@@ -49,6 +49,12 @@ internal sealed class ProcessListView : ListView
     public event Action<int, Point>? HeaderContextMenu;
 
     /// <summary>
+    /// A context menu was asked for on the rows: the screen point to show the menu at. From the keyboard, that is the focused row's top
+    /// left, kept inside the list, or the list's top left when no row has the focus.
+    /// </summary>
+    public event Action<Point>? RowContextMenu;
+
+    /// <summary>
     /// When set, the list answers the native control's requests for cell text and icons itself, from this source, and its custom
     /// draw and cache hints too: painting then never raises <see cref="ListView.RetrieveVirtualItem"/>, which builds a whole
     /// <see cref="ListViewItem"/> per cell, nor <see cref="ListView.CacheVirtualItems"/>. The WinForms paths that read whole items
@@ -133,6 +139,12 @@ internal sealed class ProcessListView : ListView
         {
             RaiseHeaderContextMenu(m.WParam, m.LParam);
             return; // base would also open the row ContextMenuStrip
+        }
+
+        if (m.Msg == WmContextMenu && m.WParam != 0 && m.WParam == Handle)
+        {
+            RaiseRowContextMenu(m.LParam);
+            return; // base would open a ContextMenuStrip, or pass the message on to the parent
         }
 
         // The list's own notifications, which its parent reflects back here.
@@ -237,5 +249,27 @@ internal sealed class ProcessListView : ListView
         }
 
         HeaderContextMenu?.Invoke(column, new Point(point.X, point.Y));
+    }
+
+    private void RaiseRowContextMenu(nint lParam)
+    {
+        Point screen;
+        if (unchecked((int)lParam) == -1)
+        {
+            // From the keyboard: no cursor position, so anchor the menu at the focused row, which may be scrolled out of view.
+            var client = Point.Empty;
+            var focus = (int)User32.SendMessage(Handle, User32.LvmGetNextItem, -1, User32.LvniFocused);
+            var rect = new User32.NativeRect { Left = User32.LvirBounds };
+            if (focus >= 0 && User32.SendMessage(Handle, User32.LvmGetItemRect, focus, ref rect) != 0)
+                client = new Point(Math.Clamp(rect.Left, 0, ClientSize.Width), Math.Clamp(rect.Top, 0, ClientSize.Height));
+            screen = PointToScreen(client);
+        }
+        else
+        {
+            // Signed words: screen coordinates are negative left of or above the primary monitor.
+            screen = new Point(unchecked((short)lParam), unchecked((short)(lParam >> 16)));
+        }
+
+        RowContextMenu?.Invoke(screen);
     }
 }

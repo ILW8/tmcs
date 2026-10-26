@@ -643,7 +643,7 @@ public partial class DetailsViewTests
             Settings = settings ?? AppSettings.CreateDefault();
             Table = new ProcessTable(info ?? new FakeInfo(), 1);
             Table.Apply(Snapshot, 10_000_000);
-            View = new DetailsView(Table, _images, Settings) { Dock = DockStyle.Fill };
+            View = new DetailsView(Table, _images, Settings, new FakeProcessActions()) { Dock = DockStyle.Fill };
             View.TrackHeaderMenu = (_, _) => throw new InvalidOperationException("the test would have shown the header menu");
             View.ChooseColumns = _ => throw new InvalidOperationException("the test would have shown the dialog");
             View.SettingsChanged += (_, _) => SettingsChanged++;

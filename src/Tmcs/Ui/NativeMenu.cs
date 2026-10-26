@@ -57,6 +57,10 @@ internal sealed class NativeMenu : IDisposable
     /// <summary>Enables or grays the item with command id <paramref name="id"/>.</summary>
     public void SetEnabled(int id, bool enabled) => User32.EnableMenuItem(Handle, (uint)id, enabled ? 0 : User32.MfGrayed);
 
+    /// <summary>Enables or grays the item at <paramref name="position"/> in this menu: the only way to name a submenu's item, which has no command id.</summary>
+    public void SetEnabledAt(int position, bool enabled) =>
+        User32.EnableMenuItem(Handle, (uint)position, User32.MfByPosition | (enabled ? 0 : User32.MfGrayed));
+
     /// <summary>Checks or clears the item with command id <paramref name="id"/>, here or in a submenu.</summary>
     public void SetChecked(int id, bool isChecked) => User32.CheckMenuItem(Handle, (uint)id, isChecked ? User32.MfChecked : 0);
 

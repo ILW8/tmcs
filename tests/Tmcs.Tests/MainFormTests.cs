@@ -140,7 +140,7 @@ public sealed partial class MainFormTests : IDisposable
         new SettingsStore(SettingsPath).Save(saved);
         var icons = new FakeIconLoader();
         var generic = icons.CreateGeneric();
-        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, generic, new FakeTimer(), new SettingsStore(SettingsPath), new LaunchOptions(null, null), FakeDeviceSources.Create());
+        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, generic, new FakeTimer(), new SettingsStore(SettingsPath), new LaunchOptions(null, null), FakeDeviceSources.Create(), new FakeProcessActions());
 
         Assert.Throws<InvalidOperationException>(() => new OffscreenMainForm(services));
 
@@ -698,7 +698,7 @@ public sealed partial class MainFormTests : IDisposable
 
         public Rig(string settingsPath, LaunchOptions? options = null)
         {
-            var services = new AppServices(Snapshots, new FakeInfo(), Icons, Icons.CreateGeneric(), Timer, new SettingsStore(settingsPath), options ?? new LaunchOptions(null, null), Devices);
+            var services = new AppServices(Snapshots, new FakeInfo(), Icons, Icons.CreateGeneric(), Timer, new SettingsStore(settingsPath), options ?? new LaunchOptions(null, null), Devices, new FakeProcessActions());
             Form = new OffscreenMainForm(services);
         }
 
