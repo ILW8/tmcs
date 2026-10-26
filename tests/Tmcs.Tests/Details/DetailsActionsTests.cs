@@ -12,7 +12,7 @@ using Tmcs.Ui;
 namespace Tmcs.Tests.Details;
 
 // No test here opens the row menu or a dialog, or ends a real process: the rig replaces DetailsView's TrackRowMenu, Confirm,
-// ShowError and ShowNotice with recorders, and its actions are a FakeProcessActions.
+// ChooseAffinity, ShowError and ShowNotice with recorders, and its actions are a FakeProcessActions.
 public partial class DetailsActionsTests
 {
     // Values the tests check are written out here rather than taken from production code, so a wrong constant shows up.
@@ -440,6 +440,64 @@ public partial class DetailsActionsTests
     });
 
     [Fact]
+    public void Affinity_asks_the_dialog_then_sets_the_chosen_mask() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Actions.Affinities[2] = new AffinityInfo(0b0110, 0b1111);
+        rig.AffinityAnswer = 0b0101;
+
+        rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(2)]);
+
+        Assert.Equal([("alpha.exe", new AffinityInfo(0b0110, 0b1111))], rig.AffinityAsks);
+        Assert.Equal([(rig.Row(2).Id, (nuint)0b0101)], rig.Actions.AffinitySets);
+        Assert.Empty(rig.Errors);
+        Assert.Empty(rig.Confirms); // Set affinity has no confirmation
+
+        // Cancel sets nothing.
+        rig.Actions.AffinitySets.Clear();
+        rig.AffinityAnswer = null;
+        rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(2)]);
+        Assert.Empty(rig.Actions.AffinitySets);
+        Assert.Empty(rig.Errors);
+
+        // More than one row: the menu grays it, and the command does nothing either.
+        rig.Actions.Calls.Clear();
+        rig.AffinityAsks.Clear();
+        rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(2), rig.Row(3)]);
+        Assert.Empty(rig.Actions.Calls);
+        Assert.Empty(rig.AffinityAsks);
+    });
+
+    [Fact]
+    public void Affinity_that_cannot_be_read_shows_the_error_without_the_dialog() => Sta.Run(() =>
+    {
+        using var rig = new Rig(); // the fake has no affinity for PID 3: GetAffinity is null
+
+        rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(3)]);
+
+        Assert.Equal([(ErrorKind.Affinity, new ActionOutcome(ActionOutcome.EAccessDenied, ShowDialog: true), false)], rig.Errors);
+        Assert.Empty(rig.AffinityAsks);
+        Assert.Empty(rig.Actions.AffinitySets);
+    });
+
+    [Fact]
+    public void Set_affinity_failure_shows_the_error_and_a_gone_process_shows_nothing() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        var denied = new ActionOutcome(ActionOutcome.EAccessDenied, ShowDialog: true);
+        rig.Actions.Affinities[2] = rig.Actions.Affinities[3] = new AffinityInfo(0b11, 0b11);
+        rig.Actions.AffinityOutcomes[2] = denied;
+        rig.Actions.AffinityOutcomes[3] = ActionOutcome.Gone;
+        rig.AffinityAnswer = 0b01;
+        rig.Actions.IsElevated = true;
+
+        rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(2)]);
+        rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(3)]);
+
+        Assert.Equal([(ErrorKind.Affinity, denied, true)], rig.Errors);
+    });
+
+    [Fact]
     public void Thousand_menu_open_and_cancel_stay_flat() => Sta.Run(() =>
     {
         using var rig = new Rig();
@@ -517,6 +575,10 @@ public partial class DetailsActionsTests
         public readonly List<(ErrorKind Kind, ActionOutcome Outcome, bool IsElevated)> Errors = [];
         public readonly List<(string Title, string Body)> Notices = [];
         public bool ConfirmAnswer = true;
+        public readonly List<(string Name, AffinityInfo Info)> AffinityAsks = [];
+
+        /// <summary>The mask the affinity dialog answers with; null is Cancel.</summary>
+        public nuint? AffinityAnswer;
 
         /// <summary>What the menu returns; dismissed (0) unless a test sets it.</summary>
         public Func<IReadOnlyList<ProcessRow>, Point, int> TrackRowMenu = (_, _) => 0;
@@ -542,6 +604,11 @@ public partial class DetailsActionsTests
             {
                 Confirms.Add((kind, count, singleName, critical, criticalName));
                 return ConfirmAnswer;
+            };
+            View.ChooseAffinity = (name, info) =>
+            {
+                AffinityAsks.Add((name, info));
+                return AffinityAnswer;
             };
             View.ShowError = (kind, outcome, isElevated) => Errors.Add((kind, outcome, isElevated));
             View.ShowNotice = (title, body) => Notices.Add((title, body));

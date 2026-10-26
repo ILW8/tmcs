@@ -20,6 +20,10 @@ internal sealed unsafe class ProcessActions : IProcessActions
     // GetPriorityClass the second.
     const uint SetPriorityAccess = Kernel32.ProcessSetInformation | Kernel32.ProcessQueryLimitedInformation;
 
+    // The same right as Set priority: SetProcessAffinityMask needs the first, the identity check the second. Reading the masks needs
+    // only PROCESS_QUERY_LIMITED_INFORMATION.
+    const uint SetAffinityAccess = SetPriorityAccess;
+
     const int EFail = unchecked((int)0x80004005);
 
     const int ErrorInvalidParameter = 87;
@@ -108,10 +112,45 @@ internal sealed unsafe class ProcessActions : IProcessActions
         }
     }
 
-    // Task 8 implements Set affinity. Until then its calls fail without touching the process.
-    public AffinityInfo? GetAffinity(ProcessIdentity id) => null;
+    public AffinityInfo? GetAffinity(ProcessIdentity id)
+    {
+        if (id.Pid is 0 or 1 or 4 or 5) return null;
 
-    public ActionOutcome SetAffinity(ProcessIdentity id, nuint mask) => new(ActionOutcome.ENotImpl, ShowDialog: true);
+        var process = OpenSameProcess(id, Kernel32.ProcessQueryLimitedInformation);
+        if (process == 0) return null;
+        try
+        {
+            return Kernel32.GetProcessAffinityMask(process, out var processMask, out var systemMask) ? new AffinityInfo(processMask, systemMask) : null;
+        }
+        finally
+        {
+            Kernel32.CloseHandle(process);
+        }
+    }
+
+    public ActionOutcome SetAffinity(ProcessIdentity id, nuint mask)
+    {
+        if (id.Pid is 0 or 1 or 4 or 5) return NotValidForThisProcess;
+
+        var process = Kernel32.OpenProcess(SetAffinityAccess, false, id.Pid);
+        if (process == 0)
+        {
+            var openError = Marshal.GetLastPInvokeError();
+            return openError == ErrorInvalidParameter ? ActionOutcome.Gone : new(LastErrorHResult(openError), ShowDialog: true);
+        }
+        try
+        {
+            if (!IsSameProcess(process, id)) return ActionOutcome.Gone;
+
+            return Kernel32.SetProcessAffinityMask(process, mask)
+                ? ActionOutcome.Success
+                : new(LastErrorHResult(Marshal.GetLastPInvokeError()), ShowDialog: true);
+        }
+        finally
+        {
+            Kernel32.CloseHandle(process);
+        }
+    }
 
     static bool ReadElevation()
     {

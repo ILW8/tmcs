@@ -79,6 +79,18 @@ internal static class ActionStrings
     // 37231
     public const string AffinityFailedTitle = "Unable to access or set process affinity";
 
+    // 34701, the dialog's caption.
+    public const string AffinityTitle = "Processor affinity";
+
+    // 34702
+    public const string AffinityPrompt = "Which processors are allowed to run \"{0}\"?";
+
+    // 34707
+    public const string AllProcessors = "<All Processors>";
+
+    // 34705, with the logical processor's number where Task Manager has %1!u!.
+    public const string CpuRow = "CPU {0}";
+
     // 37225
     public const string OperationFailed = "The operation could not be completed.";
 

@@ -41,7 +41,7 @@ internal static unsafe partial class Kernel32
     /// <summary><c>PROCESS_QUERY_INFORMATION</c>: the full query right, which some NT information classes need.</summary>
     public const uint ProcessQueryInformation = 0x0400;
 
-    /// <summary><c>PROCESS_SET_INFORMATION</c>: lets <see cref="SetPriorityClass"/> change the process's class.</summary>
+    /// <summary><c>PROCESS_SET_INFORMATION</c>: lets <see cref="SetPriorityClass"/> change the process's class and <see cref="SetProcessAffinityMask"/> its affinity.</summary>
     public const uint ProcessSetInformation = 0x0200;
 
     public const int ErrorAccessDenied = 5;
@@ -55,6 +55,16 @@ internal static unsafe partial class Kernel32
     /// <returns>The <c>*_PRIORITY_CLASS</c> value, or 0 on failure.</returns>
     [LibraryImport("kernel32.dll", SetLastError = true)]
     public static partial uint GetPriorityClass(nint process);
+
+    /// <param name="process">A handle with at least <see cref="ProcessQueryLimitedInformation"/>.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetProcessAffinityMask(nint process, out nuint processMask, out nuint systemMask);
+
+    /// <param name="process">A handle with <see cref="ProcessSetInformation"/>.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetProcessAffinityMask(nint process, nuint mask);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -96,6 +96,11 @@ internal sealed class DetailsView : UserControl, ICellSource
             return menu.Track(this, screen);
         };
         Confirm = (kind, count, singleName, critical, criticalName) => ConfirmDialog.Show(DialogOwner, kind, count, singleName, critical, criticalName);
+        ChooseAffinity = (name, info) =>
+        {
+            using var dialog = new ProcessorAffinityDialog(name, info);
+            return dialog.ShowDialog(DialogOwner) == DialogResult.OK ? dialog.Mask : null;
+        };
         ShowError = (kind, outcome, isElevated) => ErrorDialog.Show(DialogOwner, kind, outcome, isElevated);
         ShowNotice = (title, body) => ErrorDialog.ShowNotice(DialogOwner, title, body);
 
@@ -126,6 +131,13 @@ internal sealed class DetailsView : UserControl, ICellSource
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Func<ConfirmKind, int, string?, bool, string?, bool> Confirm { get; set; }
+
+    /// <summary>
+    /// Shows the Processor affinity dialog for the process with this name, seeded with these masks, and returns the chosen mask, or
+    /// null on Cancel. Tests replace it so no dialog opens.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<string, AffinityInfo, nuint?> ChooseAffinity { get; set; }
 
     /// <summary>Shows why a command failed, given whether tmcs runs elevated. Tests replace it so no dialog opens.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -446,7 +458,10 @@ internal sealed class DetailsView : UserControl, ICellSource
             case var _ when CommandIds.TryGetPriority(id, out var priority):
                 SetPriority(priority, selection);
                 break;
-            // Set affinity, Open file location, Properties and Copy do nothing yet.
+            case CommandIds.SetAffinity:
+                SetAffinity(selection);
+                break;
+            // Open file location, Properties and Copy do nothing yet.
         }
     }
 
@@ -548,5 +563,30 @@ internal sealed class DetailsView : UserControl, ICellSource
         {
             ShowNotice(ActionStrings.RealtimeNoticeTitle, ActionStrings.RealtimeNotice);
         }
+    }
+
+    /// <summary>
+    /// Reads the one selected row's masks, asks the dialog (reference 5.1; Set affinity has no confirmation), then sets the chosen mask.
+    /// A process that is gone by then is skipped without a word.
+    /// </summary>
+    private void SetAffinity(IReadOnlyList<ProcessRow> selection)
+    {
+        // The menu grays Set affinity for any other selection.
+        if (selection.Count != 1) return;
+        var row = selection[0];
+
+        if (_actions.GetAffinity(row.Id) is not { } info)
+        {
+            // A null carries no error. Opening a process for query fails for lack of access in practice, and Task Manager words
+            // that case as access denied.
+            ShowError(ErrorKind.Affinity, new ActionOutcome(ActionOutcome.EAccessDenied, ShowDialog: true), _actions.IsElevated);
+            return;
+        }
+
+        if (ChooseAffinity(row.Name, info) is not { } mask) return;
+
+        var outcome = _actions.SetAffinity(row.Id, mask);
+        if (outcome.IsGone || outcome.Ok || !outcome.ShowDialog) return;
+        ShowError(ErrorKind.Affinity, outcome, _actions.IsElevated);
     }
 }

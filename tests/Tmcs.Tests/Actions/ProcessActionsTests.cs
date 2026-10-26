@@ -192,6 +192,56 @@ public class ProcessActionsTests
     }
 
     [Fact]
+    public void Get_and_set_affinity_round_trip()
+    {
+        var child = Start();
+        try
+        {
+            var actions = new ProcessActions();
+            var id = IdOf(child);
+
+            var before = actions.GetAffinity(id);
+            Assert.NotNull(before);
+            Assert.NotEqual((nuint)0, before.Value.SystemMask);
+            Assert.NotEqual((nuint)0, before.Value.ProcessMask & before.Value.SystemMask);
+
+            // The lowest CPU the process may use, on its own.
+            var single = before.Value.ProcessMask & (nuint)(-(nint)before.Value.ProcessMask);
+            var set = actions.SetAffinity(id, single);
+
+            Assert.True(set.Ok, $"0x{set.HResult:X8}");
+            Assert.Equal(single, actions.GetAffinity(id)?.ProcessMask);
+        }
+        finally { Kill(child); }
+    }
+
+    [Fact]
+    public void Affinity_refuses_a_reused_pid_and_the_kernel_pids()
+    {
+        var child = Start();
+        try
+        {
+            var actions = new ProcessActions();
+            var id = IdOf(child);
+            var reused = id with { CreateTime = id.CreateTime + 1 };
+            var before = actions.GetAffinity(id)!.Value;
+
+            Assert.Null(actions.GetAffinity(reused));
+            Assert.True(actions.SetAffinity(reused, 1).IsGone);
+            Assert.Equal(before, actions.GetAffinity(id));
+
+            foreach (var pid in new[] { 0, 1, 4, 5 })
+            {
+                var refused = actions.SetAffinity(new ProcessIdentity(pid, 1), 1);
+                Assert.True(refused.IsInvalidArg);
+                Assert.True(refused.ShowDialog);
+                Assert.Null(actions.GetAffinity(new ProcessIdentity(pid, 1)));
+            }
+        }
+        finally { Kill(child); }
+    }
+
+    [Fact]
     public void Set_priority_refuses_a_reused_pid()
     {
         var child = Start();

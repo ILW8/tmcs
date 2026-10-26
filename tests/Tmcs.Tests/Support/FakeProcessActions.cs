@@ -66,9 +66,13 @@ internal sealed class FakeProcessActions : IProcessActions
         return Affinities.TryGetValue(id.Pid, out var info) ? info : null;
     }
 
+    /// <summary>Each <see cref="SetAffinity"/> call's process and requested mask, in order.</summary>
+    public List<(ProcessIdentity Id, nuint Mask)> AffinitySets { get; } = [];
+
     public ActionOutcome SetAffinity(ProcessIdentity id, nuint mask)
     {
         Calls.Add((nameof(SetAffinity), id));
+        AffinitySets.Add((id, mask));
         return AffinityOutcomes.GetValueOrDefault(id.Pid, ActionOutcome.Success);
     }
 }
