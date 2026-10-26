@@ -187,12 +187,28 @@ Every confirmation in Task Manager uses the same `TASKDIALOGCONFIG`:
 
 ### 3.2 The end-task worker (`FUN_1400d8fe8`, endtask.cpp)
 
-1. `OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION (0x1001), FALSE, pid)`.
-2. Check that the creation time matches the row's. A PID that was reused is never ended.
-3. `TerminateProcess(h, 1)`. The exit code is **1**.
-4. If the open fails, show the error dialog (3.3) with the title for this command.
-5. If `TerminateProcess` itself fails with access denied, Task Manager shows no dialog. Instead it lists `SystemHandleInformation` and closes the target's File handles. **tmcs does not copy this.** It shows the error dialog instead (the builder's call).
+1. **Open** (`FUN_14000e7c0`):
+   - PIDs 0, 1, 4 and 5 are refused with `E_INVALIDARG` before anything is opened. This is where 37226 `The operation is not valid for this process.` comes from, for example for System Idle Process and System.
+   - Otherwise it calls `OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION (0x1001), FALSE, pid)`, then `GetProcessTimes`.
+   - The creation time must match the row's. A PID that was reused is never ended.
+2. **Windows first:** for each window in a list the caller passes (item + 0x240), it tries a polite close, with a 2-second budget for the whole list. It is not yet known whether Details rows ever fill this list (**probe**; the Processes tab's apps are the likely users). For each window (`FUN_1400d93e4`):
+   - `IsHungAppWindow`: a hung window is skipped.
+   - Otherwise it sends `SendMessageTimeout(hwnd, WM_SYSCOMMAND, SC_CLOSE, 0, SMTO_BLOCK | SMTO_ABORTIFHUNG, 250 ms)`.
+   - It sleeps 25 ms and checks `IsWindow`, then waits another 225 ms and checks again.
+   - If the window is still there and shows no new popup, it calls `ReportHang`.
+3. `TerminateProcess(h, 1)`. The exit code is **1**. It is 0 for the Processes tab's Restart command.
+4. If the open fails, the error dialog (3.3) shows with the title for this command.
+5. **`TerminateProcess` fails after a successful open:**
+   - The error dialog shows only when the error is **not** `E_ACCESSDENIED`.
+   - For any error, a background step then runs, unless the command was Restart. `FUN_1400d9870` reopens the process with `PROCESS_TERMINATE | PROCESS_DUP_HANDLE | PROCESS_QUERY_LIMITED_INFORMATION` (0x1041), with the same identity check. It queues `FUN_1400d81d0` on the thread pool with `QueueUserWorkItem(WT_EXECUTELONGFUNCTION)`.
+   - That work item, `FUN_1400d7e54`, reads the whole system handle table with `NtQuerySystemInformation(SystemHandleInformation = 16)`. This is the legacy form, with 16-bit PID and handle fields. For each handle the target owns (PID compared on its low 16 bits), it decides as follows:
+     - **A handle of any type other than File** is closed in the target: `DuplicateHandle(target, h, self, &dup, 0, FALSE, DUPLICATE_CLOSE_SOURCE)`, then `CloseHandle(dup)`.
+     - **A File handle** (`FUN_1400d9a0c`) is closed the same way only when both hold: `NtQueryInformationFile(FileIsRemoteDeviceInformation)` says the file is local, and `GetFileType` is `FILE_TYPE_DISK` or `FILE_TYPE_PIPE`. Remote files, character devices such as the console, and handles whose query fails stay open.
+     - It finds the File type's index by duplicating handles and asking each one's type name, until one is `File`. A handle whose type query fails is skipped.
+   - Windows documents that `TerminateProcess` fails with `ERROR_ACCESS_DENIED` for a process that has already ended or is ending. So in practice this step runs on a process stuck partway through its exit. That is also why access denied shows no dialog here. Closing the handles of such a process ends their pending I/O, which can let the exit finish.
 6. It restarts Explorer only for the Processes tab's Restart command, which is not in tmcs.
+
+tmcs's choice for step 5 is recorded in the M3 plan.
 
 ### 3.3 The error dialog (`FUN_14008aa5c` → `FUN_14008b93c` → `TaskDialog`)
 
@@ -274,3 +290,4 @@ Every action acts on a `ProcessIdentity(Pid, CreateTime)`, never on a bare PID. 
 4. What run-dialog flag 0x80 does.
 5. The critical-process verification checkbox (3.1).
 6. When 32451 shows (4).
+7. Whether End task on a Details row first tries to close the process's windows (3.2 step 2), or ends the process at once.
