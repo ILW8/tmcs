@@ -71,6 +71,12 @@ public class GraphPainterTests
       Assert.Equal(0xD9EAF4, px[457, 5]); Assert.Equal(0xD9EAF4, px[558, 5]); // 51 s and 61 s
       for (var x = 458; x < 599; x++) if (x != 558) Assert.Equal(0xFFFFFF, px[x, 5]); }
 
+    // High speed's 0.5-s ticks never fold, so its ring fills to History.Capacity points, and every one is painted.
+    [Fact] public void A_full_ring_at_high_speed_paints_border_to_border()
+    { var h = new History(2); for (var i = 0; i < History.Capacity + 9; i++) h.Add((i + 1) * 5_000_000L, [33f, 0f]);
+      var px = Paint(h, second: -1, width: 600);
+      Assert.Equal(History.Capacity, h.Count); Assert.Equal(0x117DBB, px[1, 50]); Assert.Equal(0x117DBB, px[598, 50]); }
+
     // Only rows without beats, as for a pane the view has not handed them to.
     [Fact] public void No_beats_draw_only_the_grid_rows()
     { var px = Paint(Steady(0, 0), beats: new GridBeats());
