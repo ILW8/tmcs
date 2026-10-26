@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace Tmcs.Native;
 
@@ -11,6 +12,12 @@ internal static unsafe partial class Kernel32
 
     /// <summary><c>ALL_PROCESSOR_GROUPS</c>: <see cref="GetActiveProcessorCount"/> counts the processors of every group.</summary>
     public const ushort AllProcessorGroups = 0xFFFF;
+
+    /// <summary><c>RelationAll</c>: <see cref="GetLogicalProcessorInformationEx"/> returns every relationship.</summary>
+    public const int RelationAll = 0xFFFF;
+
+    /// <summary><c>PF_VIRT_FIRMWARE_ENABLED</c>: virtualization is enabled in the firmware.</summary>
+    public const uint PfVirtFirmwareEnabled = 21;
 
     /// <returns>The process handle, or 0 on failure. The caller must <see cref="CloseHandle"/> it.</returns>
     [LibraryImport("kernel32.dll", SetLastError = true)]
@@ -40,4 +47,92 @@ internal static unsafe partial class Kernel32
     /// <returns>The number of active logical processors in the group, or 0 on failure.</returns>
     [LibraryImport("kernel32.dll", SetLastError = true)]
     public static partial uint GetActiveProcessorCount(ushort groupNumber);
+
+    /// <summary>Fills <paramref name="buffer"/> with variable-sized <c>SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX</c> records.</summary>
+    /// <param name="length">In: bytes in <paramref name="buffer"/>. Out: bytes needed or written. Fails with <see cref="ErrorInsufficientBuffer"/> when too small.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetLogicalProcessorInformationEx(int relationship, byte* buffer, ref uint length);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsProcessorFeaturePresent(uint feature);
+
+    /// <summary>The <c>MEMORYSTATUSEX</c> block. <see cref="Length"/> must be set to its size before the call.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MemoryStatusEx
+    {
+        public uint Length;
+        public uint MemoryLoad;
+        public ulong TotalPhys;
+        public ulong AvailPhys;
+        public ulong TotalPageFile;
+        public ulong AvailPageFile;
+        public ulong TotalVirtual;
+        public ulong AvailVirtual;
+        public ulong AvailExtendedVirtual;
+    }
+
+    /// <summary>The <c>'RSMB'</c> provider signature for <see cref="GetSystemFirmwareTable"/>.</summary>
+    public const uint RawSmbiosProvider = 0x52534D42;
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GlobalMemoryStatusEx(ref MemoryStatusEx status);
+
+    /// <param name="kilobytes">The installed memory in KB, from the SMBIOS memory devices.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetPhysicallyInstalledSystemMemory(out ulong kilobytes);
+
+    /// <returns>The table's size in bytes (what was copied, or what is needed when <paramref name="size"/> is too small), or 0 on failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial uint GetSystemFirmwareTable(uint provider, uint tableId, byte* buffer, uint size);
+
+    public const uint FileShareRead = 1;
+    public const uint FileShareWrite = 2;
+    public const uint OpenExisting = 3;
+
+    /// <summary>Opens a device or volume. Access 0 asks for no data rights, which is enough for the query IOCTLs and needs no elevation.</summary>
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial SafeFileHandle CreateFileW(string fileName, uint desiredAccess, uint shareMode, nint securityAttributes, uint creationDisposition, uint flagsAndAttributes, nint templateFile);
+
+    /// <summary>The overload for a path read on every tick: it allocates nothing, on success or failure.</summary>
+    /// <param name="fileName">Zero-terminated.</param>
+    /// <returns>The handle, or <see cref="InvalidHandleValue"/> on failure. The caller must <see cref="CloseHandle"/> it.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true)]
+    public static partial nint CreateFileW(char* fileName, uint desiredAccess, uint shareMode, nint securityAttributes, uint creationDisposition, uint flagsAndAttributes, nint templateFile);
+
+    public const nint InvalidHandleValue = -1;
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeviceIoControl(SafeFileHandle device, uint controlCode, void* inBuffer, uint inSize, void* outBuffer, uint outSize, out uint bytesReturned, nint overlapped);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeviceIoControl(nint device, uint controlCode, void* inBuffer, uint inSize, void* outBuffer, uint outSize, out uint bytesReturned, nint overlapped);
+
+    /// <param name="name">Receives <c>\?\Volume{guid}\</c>, with a terminator.</param>
+    /// <returns>A find handle for <see cref="FindVolumeClose"/>, or -1 on failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial nint FindFirstVolumeW(char* name, uint length);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool FindNextVolumeW(nint find, char* name, uint length);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool FindVolumeClose(nint find);
+
+    /// <param name="volumeName">The volume name with its trailing backslash.</param>
+    /// <param name="names">Receives a multi-string of mount paths (<c>C:\</c>, folder mounts).</param>
+    [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetVolumePathNamesForVolumeNameW(string volumeName, char* names, uint length, out uint needed);
+
+    /// <returns>Chars written excluding the terminator, or 0 on failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial uint GetSystemWindowsDirectoryW(char* buffer, uint size);
 }

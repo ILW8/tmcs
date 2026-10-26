@@ -27,7 +27,19 @@ public sealed class DiagnosticsTests : IDisposable
                 new ScenarioStep(ScenarioAction.Paused, TimeSpan.FromMinutes(5)),
             ],
             steps);
-        Assert.Throws<FormatException>(() => ScenarioParser.Parse("bogus:1"));
+        Assert.Equal(
+            [
+                new ScenarioStep(ScenarioAction.Cpu, TimeSpan.FromMinutes(12)),
+                new ScenarioStep(ScenarioAction.Network, TimeSpan.FromMinutes(12)),
+                new ScenarioStep(ScenarioAction.Gpu, TimeSpan.FromMinutes(12)),
+                new ScenarioStep(ScenarioAction.Paused, TimeSpan.FromMinutes(1)),
+            ],
+            ScenarioParser.Parse("cpu:12,network:12,gpu:12,paused:1"));
+        foreach (var action in Enum.GetValues<ScenarioAction>())
+            Assert.Equal([new ScenarioStep(action, TimeSpan.FromMinutes(1))], ScenarioParser.Parse(ScenarioParser.Name(action) + ":1"));
+
+        var bad = Assert.Throws<FormatException>(() => ScenarioParser.Parse("bogus:1"));
+        foreach (var action in Enum.GetValues<ScenarioAction>()) Assert.Contains(ScenarioParser.Name(action), bad.Message); // the usage lists it
         Assert.Throws<FormatException>(() => ScenarioParser.Parse("details"));
     }
 
@@ -93,16 +105,16 @@ public sealed class DiagnosticsTests : IDisposable
     [Fact]
     public void Diag_format_is_invariant_csv()
     {
-        var snapshot = new DiagSnapshot(new DateTime(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc), "details", 5, 3, 4, 2, 1, 1, 1048576, 524288, 300, 40, 20, 12.5, 3.25);
+        var snapshot = new DiagSnapshot(new DateTime(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc), "details", 5, 3, 4, 2, 1, 1, 1048576, 524288, 300, 40, 20, 12.5, 3.25, 20, 512);
 
         var line = WithCulture("de-DE", () => DiagLog.Format(snapshot));
 
-        Assert.Equal("2026-10-23T12:00:00.0000000Z,details,5,3,4,2,1,1,1048576,524288,300,40,20,12.5,3.25", line);
+        Assert.Equal("2026-10-23T12:00:00.0000000Z,details,5,3,4,2,1,1,1048576,524288,300,40,20,12.5,3.25,20,512", line);
         Assert.Equal(
-            "utc,step,samples,rows,icon_slots,icon_live,icon_pooled,sid_cache,private_bytes,managed_bytes,handles,gdi,user,cpu_ms,switch_ms",
+            "utc,step,samples,rows,icon_slots,icon_live,icon_pooled,sid_cache,private_bytes,managed_bytes,handles,gdi,user,cpu_ms,switch_ms,devices,gpu_instances",
             DiagLog.Header);
-        Assert.Equal(15, DiagLog.Header.Split(',').Length);
-        Assert.Equal(15, line.Split(',').Length);
+        Assert.Equal(17, DiagLog.Header.Split(',').Length);
+        Assert.Equal(17, line.Split(',').Length);
     }
 
     [Fact]
@@ -115,7 +127,7 @@ public sealed class DiagnosticsTests : IDisposable
         DiagSnapshot Probe()
         {
             var n = probed.Count + 1;
-            var snapshot = new DiagSnapshot(new DateTime(2026, 10, 23, 12, 0, 10 * n, DateTimeKind.Utc), "details", n, 3, 4, 2, 1, 1, 1048576 * n, 524288, 300, 40, 20, 12.5 * n, 3.25);
+            var snapshot = new DiagSnapshot(new DateTime(2026, 10, 23, 12, 0, 10 * n, DateTimeKind.Utc), "details", n, 3, 4, 2, 1, 1, 1048576 * n, 524288, 300, 40, 20, 12.5 * n, 3.25, 20, 512);
             probed.Add(snapshot);
             return snapshot;
         }
@@ -187,6 +199,8 @@ public sealed class DiagnosticsTests : IDisposable
     [InlineData("")] // no first line at all
     [InlineData(DiagLog.Header + ",extra\n")]
     [InlineData("#" + DiagLog.Header + "\n")]
+    [InlineData("utc,step,samples,rows,icon_slots,icon_live,icon_pooled,sid_cache,private_bytes,managed_bytes,handles,gdi,user,cpu_ms,switch_ms\n" +
+                "2026-10-23T12:00:00.0000000Z,details,1,3,4,2,1,1,1048576,524288,300,40,20,12.5,3.25\n")] // an M1 log
     public void Existing_file_that_is_not_a_diag_csv_is_refused_and_left_alone(string content)
     {
         Directory.CreateDirectory(_dir);
@@ -202,7 +216,7 @@ public sealed class DiagnosticsTests : IDisposable
     }
 
     [Theory]
-    [InlineData(DiagLog.Header + "\r\n2026-10-23T12:00:00.0000000Z,details,1,3,4,2,1,1,1048576,524288,300,40,20,12.5,3.25\r\n")]
+    [InlineData(DiagLog.Header + "\r\n2026-10-23T12:00:00.0000000Z,details,1,3,4,2,1,1,1048576,524288,300,40,20,12.5,3.25,20,512\r\n")]
     [InlineData(DiagLog.Header + "\n")]
     [InlineData(DiagLog.Header)]
     public void Existing_diag_csv_is_replaced(string content)

@@ -11,8 +11,17 @@ internal enum ScenarioAction
     /// <summary>Minimized, sampling at Normal speed.</summary>
     Minimized,
 
-    /// <summary>Restored, on the Details tab, paused.</summary>
+    /// <summary>Restored, on the Performance tab's CPU pane, paused.</summary>
     Paused,
+
+    /// <summary>Restored, on the Performance tab's CPU pane, sampling at Normal speed.</summary>
+    Cpu,
+
+    /// <summary>Restored, on the Performance tab's pane for the first adapter the sidebar lists (never a hidden one), sampling at Normal speed.</summary>
+    Network,
+
+    /// <summary>Restored, on the Performance tab's pane for GPU 0, sampling at Normal speed.</summary>
+    Gpu,
 }
 
 /// <summary>One step of a scenario: <see cref="Action"/> is applied, then held for <see cref="Duration"/>.</summary>
@@ -21,7 +30,7 @@ internal readonly record struct ScenarioStep(ScenarioAction Action, TimeSpan Dur
 /// <summary>Reads a <c>TMCS_SCENARIO</c> spec.</summary>
 internal static class ScenarioParser
 {
-    private const string Usage = "the format is action:minutes[,action:minutes]*, with action details, minimized or paused, e.g. details:10,minimized:0.5";
+    private const string Usage = "the format is action:minutes[,action:minutes]*, with action details, minimized, paused, cpu, network or gpu, e.g. details:10,minimized:0.5";
 
     /// <summary>The longest step a timer interval can hold: <see cref="int.MaxValue"/> ms, about 35791 minutes.</summary>
     private const double MaxMinutes = int.MaxValue / 60_000.0;
@@ -56,6 +65,9 @@ internal static class ScenarioParser
         ScenarioAction.Details => "details",
         ScenarioAction.Minimized => "minimized",
         ScenarioAction.Paused => "paused",
+        ScenarioAction.Cpu => "cpu",
+        ScenarioAction.Network => "network",
+        ScenarioAction.Gpu => "gpu",
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
 

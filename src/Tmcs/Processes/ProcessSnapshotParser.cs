@@ -21,6 +21,7 @@ internal static class ProcessSnapshotParser
     const int OffInheritedFromUniqueProcessId = 0x58;
     const int OffHandleCount = 0x60;
     const int OffSessionId = 0x64;
+    const int OffWorkingSetSize = 0x90;
     const int OffPagefileUsage = 0xB8;
 
     // SYSTEM_THREAD_INFORMATION, laid out right after each process entry.
@@ -67,7 +68,8 @@ internal static class ProcessSnapshotParser
                 Handles: (int)BinaryPrimitives.ReadUInt32LittleEndian(entry[OffHandleCount..]),
                 SessionId: (int)BinaryPrimitives.ReadUInt32LittleEndian(entry[OffSessionId..]),
                 BasePriority: BinaryPrimitives.ReadInt32LittleEndian(entry[OffBasePriority..]),
-                IsSuspended: AllThreadsSuspended(buffer.Slice(offset + EntrySize), threads)));
+                IsSuspended: AllThreadsSuspended(buffer.Slice(offset + EntrySize), threads),
+                WorkingSet: BinaryPrimitives.ReadInt64LittleEndian(entry[OffWorkingSetSize..])));
 
             if (next == 0) return;
             offset += next;

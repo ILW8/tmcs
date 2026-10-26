@@ -94,6 +94,19 @@ public partial class NativeMenuTests
     }
 
     [Fact]
+    public void Set_text_changes_the_item_text()
+    {
+        using var menu = NativeMenu.Popup(("A", 1)).AddSeparator().AddItem("&Show hidden adapters (0)", 401);
+
+        menu.SetText(401, "&Show hidden adapters (3)");
+
+        Assert.Equal("&Show hidden adapters (3)", TextById(menu.Handle, 401));
+        Assert.Equal("A", TextById(menu.Handle, 1));
+        Assert.Equal(401u, GetMenuItemID(menu.Handle, 2)); // the same item, still in its place
+        Assert.Equal(3, GetMenuItemCount(menu.Handle));
+    }
+
+    [Fact]
     public void Bar_holds_popups_that_it_destroys_with_itself()
     {
         var bar = NativeMenu.Bar();
@@ -148,6 +161,14 @@ public partial class NativeMenuTests
     {
         var buffer = stackalloc char[64];
         var length = GetMenuString(menu, position, buffer, 64, MfByPosition);
+        return new string(buffer, 0, length);
+    }
+
+    /// <summary>By command id: <c>MF_BYCOMMAND</c> is 0.</summary>
+    private static unsafe string TextById(nint menu, uint id)
+    {
+        var buffer = stackalloc char[64];
+        var length = GetMenuString(menu, id, buffer, 64, 0);
         return new string(buffer, 0, length);
     }
 }

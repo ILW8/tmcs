@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Tmcs.Details;
+using Tmcs.Devices;
 using Tmcs.Diagnostics;
 using Tmcs.Native;
 using Tmcs.Sampling;
@@ -86,6 +87,8 @@ public sealed partial class MainFormTests
         Assert.Equal(UpdateSpeed.Paused, rig.Form.Clock.Speed);
         Assert.False(rig.Timer.Enabled);
         Assert.Equal(FormWindowState.Normal, rig.Form.WindowState);
+        Assert.Equal("Performance", Tabs(rig.Form).SelectedTab!.Text);
+        Assert.Equal("cpu", rig.Form.PerformanceView.Sidebar.SelectedKey);
         rig.Form.AssertOffscreenAndInactive();
         var reads = rig.Snapshots.Reads;
         rig.Timer.Fire();
@@ -97,6 +100,110 @@ public sealed partial class MainFormTests
         Assert.Equal(1000, rig.Timer.IntervalMs);
         Assert.True(rig.Timer.Enabled);
         Assert.Equal(FormWindowState.Normal, rig.Form.WindowState);
+        Assert.Equal("Details", Tabs(rig.Form).SelectedTab!.Text);
+        rig.Form.AssertOffscreenAndInactive();
+    });
+
+    [Fact]
+    public void Cpu_step_shows_the_cpu_pane_at_normal_speed() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath, TestMode());
+        rig.Form.ShowOffscreen();
+        IScenarioTarget target = rig.Form;
+        var view = rig.Form.PerformanceView;
+        Assert.True(view.Sidebar.SelectFirst(DeviceKind.Disk)); // away from CPU, on the other tab, minimized and paused
+        SelectTab(rig.Form, "Details");
+        var window = rig.Form.WindowRect;
+        target.Apply(ScenarioAction.Minimized);
+        rig.Form.Command(CommandIds.SpeedPaused);
+
+        target.Apply(ScenarioAction.Cpu);
+
+        Assert.Equal(FormWindowState.Normal, rig.Form.WindowState);
+        Assert.Equal(window, rig.Form.WindowRect); // the soak's restore keeps the size too
+        Assert.Equal("Performance", Tabs(rig.Form).SelectedTab!.Text);
+        Assert.Equal("cpu", view.Sidebar.SelectedKey);
+        Assert.Same(view.Panes[(int)DeviceKind.Cpu], view.VisiblePane);
+        Assert.Same(rig.Form.Performance.Cpu, view.VisiblePane.Device);
+        Assert.Equal(UpdateSpeed.Normal, rig.Form.Clock.Speed);
+        Assert.Equal(1000, rig.Timer.IntervalMs);
+        Assert.True(rig.Timer.Enabled);
+        Application.DoEvents();
+        rig.Form.AssertOffscreenAndInactive();
+    });
+
+    [Fact]
+    public void Network_step_selects_the_first_visible_adapter() => Sta.Run(() =>
+    {
+        var saved = AppSettings.CreateDefault();
+        saved.HiddenAdapters.Add("{aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa}"); // adapter A, listed first
+        new SettingsStore(SettingsPath).Save(saved);
+        using var rig = new Rig(SettingsPath, TestMode());
+        rig.Form.ShowOffscreen();
+        IScenarioTarget target = rig.Form;
+        var view = rig.Form.PerformanceView;
+        SelectTab(rig.Form, "Details");
+
+        target.Apply(ScenarioAction.Network);
+
+        Assert.Equal("Performance", Tabs(rig.Form).SelectedTab!.Text);
+        Assert.Equal("net:{bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb}", view.Sidebar.SelectedKey);
+        Assert.Same(view.Panes[(int)DeviceKind.Network], view.VisiblePane);
+        Assert.Equal(UpdateSpeed.Normal, rig.Form.Clock.Speed);
+        Assert.True(rig.Timer.Enabled);
+        rig.Form.AssertOffscreenAndInactive();
+    });
+
+    [Fact]
+    public void Gpu_step_without_a_gpu_throws() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath, TestMode());
+        rig.Form.ShowOffscreen();
+        IScenarioTarget target = rig.Form;
+        var view = rig.Form.PerformanceView;
+
+        target.Apply(ScenarioAction.Gpu); // with GPU 0 listed, it shows it
+
+        Assert.Equal("Performance", Tabs(rig.Form).SelectedTab!.Text);
+        var gpu = Assert.Single(rig.Form.Performance.Devices, d => d.Kind == DeviceKind.Gpu);
+        Assert.Equal(gpu.Key, view.Sidebar.SelectedKey);
+        Assert.Same(view.Panes[(int)DeviceKind.Gpu], view.VisiblePane);
+        Assert.Equal(UpdateSpeed.Normal, rig.Form.Clock.Speed);
+
+        rig.Devices.FakeGpu().Gpus = [];
+        rig.Form.Performance.MarkDevicesChanged();
+        rig.Form.Clock.RefreshNow(); // the rescan drops the GPU
+        var selected = view.Sidebar.SelectedKey;
+
+        var e = Assert.Throws<InvalidOperationException>(() => target.Apply(ScenarioAction.Gpu));
+        Assert.Contains(nameof(DeviceKind.Gpu), e.Message);
+        Assert.Equal(selected, view.Sidebar.SelectedKey);
+        rig.Form.AssertOffscreenAndInactive();
+    });
+
+    [Fact]
+    public void Paused_step_pauses_on_the_cpu_pane() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath, TestMode());
+        rig.Form.ShowOffscreen();
+        IScenarioTarget target = rig.Form;
+        var view = rig.Form.PerformanceView;
+        target.Apply(ScenarioAction.Network);
+        target.Apply(ScenarioAction.Minimized);
+
+        target.Apply(ScenarioAction.Paused);
+
+        Assert.Equal(FormWindowState.Normal, rig.Form.WindowState);
+        Assert.Equal("Performance", Tabs(rig.Form).SelectedTab!.Text);
+        Assert.Equal("cpu", view.Sidebar.SelectedKey);
+        Assert.Same(view.Panes[(int)DeviceKind.Cpu], view.VisiblePane);
+        Assert.Equal(UpdateSpeed.Paused, rig.Form.Clock.Speed);
+        Assert.False(rig.Timer.Enabled);
+        var cpu = rig.Devices.FakeCpu();
+        var reads = (cpu.Reads, rig.Snapshots.Reads);
+        rig.Timer.Fire();
+        Assert.Equal(reads, (cpu.Reads, rig.Snapshots.Reads));
+        Application.DoEvents();
         rig.Form.AssertOffscreenAndInactive();
     });
 
@@ -108,7 +215,8 @@ public sealed partial class MainFormTests
         using var rig = new Rig(SettingsPath, TestMode());
         rig.Form.ShowOffscreen();
         IScenarioTarget target = rig.Form;
-        target.Apply(ScenarioAction.Paused);
+        target.Apply(ScenarioAction.Details);
+        rig.Form.Command(CommandIds.SpeedPaused); // paused on the Details tab
 
         target.Apply(ScenarioAction.Minimized);
         Application.DoEvents();
@@ -167,6 +275,7 @@ public sealed partial class MainFormTests
     {
         using var rig = new Rig(SettingsPath, TestMode());
         rig.Form.ShowOffscreen();
+        rig.Devices.FakeGpu().TrackedInstances = 39;
         var self = Kernel32.GetCurrentProcess();
 
         var before = DateTime.UtcNow;
@@ -188,6 +297,8 @@ public sealed partial class MainFormTests
         Assert.Equal((int)User32.GetGuiResources(self, 1), s.User); // GR_USEROBJECTS
         Assert.True(s.CpuMs > 0);
         Assert.Equal(0, s.SwitchMs);
+        Assert.Equal(7, s.Devices); // CPU, Memory, 2 disks, 2 adapters, 1 GPU
+        Assert.Equal(39, s.GpuInstances);
         Assert.True(File.Exists(DiagPath)); // the log was started, its directory created
     });
 
@@ -197,7 +308,7 @@ public sealed partial class MainFormTests
         Directory.CreateDirectory(Path.GetDirectoryName(DiagPath)!);
         File.WriteAllText(DiagPath, DiagLog.Header + "\n"); // passes the path check; only opening it fails
         var icons = new FakeIconLoader();
-        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, icons.CreateGeneric(), new FakeTimer(), new SettingsStore(SettingsPath), TestMode());
+        var services = new AppServices(new FakeSnapshots(), new FakeInfo(), icons, icons.CreateGeneric(), new FakeTimer(), new SettingsStore(SettingsPath), TestMode(), FakeDeviceSources.Create());
         var stderr = new StringWriter();
         MainForm? form;
         int exitCode;

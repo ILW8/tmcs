@@ -62,7 +62,7 @@ public sealed class SettingsTests : IDisposable
         s.AlwaysOnTop = true;
         s.SortColumn = DetailsColumn.Cpu;
         s.SortDescending = true;
-        s.HiddenAdapters.Add("Ethernet 2");
+        s.HiddenAdapters.Add("{3f2504e0-4f89-11d3-9a0c-0305e82c3301}");
         s.DetailsColumns.Single(c => c.Id == DetailsColumn.CommandLine).Visible = false;
         var threads = s.DetailsColumns.Single(c => c.Id == DetailsColumn.Threads);
         threads.Visible = true;
@@ -82,7 +82,7 @@ public sealed class SettingsTests : IDisposable
         Assert.True(loaded.AlwaysOnTop);
         Assert.Equal(DetailsColumn.Cpu, loaded.SortColumn);
         Assert.True(loaded.SortDescending);
-        Assert.Equal(["Ethernet 2"], loaded.HiddenAdapters);
+        Assert.Equal(["{3f2504e0-4f89-11d3-9a0c-0305e82c3301}"], loaded.HiddenAdapters);
         Assert.Equal(AppSettings.VisibleInDisplayOrder(s), AppSettings.VisibleInDisplayOrder(loaded));
         Assert.DoesNotContain(DetailsColumn.CommandLine, AppSettings.VisibleInDisplayOrder(loaded));
         Assert.Contains(DetailsColumn.Threads, AppSettings.VisibleInDisplayOrder(loaded));
@@ -339,6 +339,22 @@ public sealed class SettingsTests : IDisposable
         Assert.Empty(s.HiddenAdapters);
         Assert.Equal(UpdateSpeed.Normal, s.UpdateSpeed);
         Assert.Equal(DetailsColumn.Name, s.SortColumn);
+    }
+
+    [Fact]
+    public void Hidden_adapters_are_normalized()
+    {
+        var s = AppSettings.CreateDefault();
+        s.HiddenAdapters = ["{3F2504E0-4F89-11D3-9A0C-0305E82C3301}", "bogus", "{3f2504e0-4f89-11d3-9a0c-0305e82c3301}"];
+
+        s.Normalize();
+
+        Assert.Equal(["{3f2504e0-4f89-11d3-9a0c-0305e82c3301}"], s.HiddenAdapters);
+
+        // Any format Guid parses is rewritten with braces; null entries go too.
+        s.HiddenAdapters = ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", null!, "{3f2504e0-4f89-11d3-9a0c-0305e82c3301}"];
+        s.Normalize();
+        Assert.Equal(["{aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa}", "{3f2504e0-4f89-11d3-9a0c-0305e82c3301}"], s.HiddenAdapters);
     }
 
     [Fact]

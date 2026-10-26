@@ -2,7 +2,7 @@ using Tmcs.Sampling;
 
 namespace Tmcs.Ui;
 
-/// <summary>The command ids of the main menu items, as <c>WM_COMMAND</c> reports them.</summary>
+/// <summary>The command ids of the main menu items, as <c>WM_COMMAND</c> reports them, and of the sidebar's menu.</summary>
 internal static class CommandIds
 {
     public const int Exit = 100;
@@ -14,6 +14,12 @@ internal static class CommandIds
     public const int SpeedNormal = 311;
     public const int SpeedLow = 312;
     public const int SpeedPaused = 313;
+
+    /// <summary>The sidebar menu's check item that hides or shows the adapter it was opened on.</summary>
+    public const int HideAdapter = 400;
+
+    /// <summary>The sidebar menu's check item that shows the hidden adapters for the session.</summary>
+    public const int ShowHiddenAdapters = 401;
 
     /// <summary>The Update speed item for <paramref name="speed"/>.</summary>
     public static int ForSpeed(UpdateSpeed speed) => SpeedHigh + (int)speed;

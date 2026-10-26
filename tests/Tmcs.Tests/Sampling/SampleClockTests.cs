@@ -62,6 +62,34 @@ public class SampleClockTests
     }
 
     [Fact]
+    public void Timed_tells_a_tick_from_a_refresh()
+    {
+        var timer = new FakeTimer();
+        var clock = new SampleClock(timer);
+        var seen = new List<bool>();
+        clock.Sample += () => seen.Add(clock.Timed);
+
+        timer.Fire();
+        clock.RefreshNow();
+        timer.Fire();
+
+        Assert.Equal([true, false, true], seen);
+    }
+
+    [Fact]
+    public void Interval_is_the_last_running_speeds_while_paused()
+    {
+        var clock = new SampleClock(new FakeTimer());
+        Assert.Equal(10_000_000, clock.Interval100Ns);
+
+        clock.Speed = UpdateSpeed.High;
+        Assert.Equal(5_000_000, clock.Interval100Ns);
+
+        clock.Speed = UpdateSpeed.Paused;
+        Assert.Equal(5_000_000, clock.Interval100Ns);
+    }
+
+    [Fact]
     public void Changing_speed_does_not_take_a_sample()
     {
         var timer = new FakeTimer();

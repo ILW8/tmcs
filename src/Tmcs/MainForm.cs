@@ -1,8 +1,11 @@
 using System.Diagnostics;
 using Tmcs.Details;
+using Tmcs.Devices;
 using Tmcs.Diagnostics;
 using Tmcs.Icons;
 using Tmcs.Native;
+using Tmcs.Performance;
+using Tmcs.Performance.Views;
 using Tmcs.Processes;
 using Tmcs.Sampling;
 using Tmcs.Settings;
@@ -11,10 +14,10 @@ using Tmcs.Ui;
 namespace Tmcs;
 
 /// <summary>
-/// The main window: the native menu bar, the tabs (only Details so far) and the wiring between the sample clock, the process
-/// table, the icon store and the Details view. Every sample applies a snapshot to the table, whatever is showing, so an exited
-/// process gives back its icon on the same tick. The Details view is refreshed only while it can be seen, and at once when it
-/// becomes visible again.
+/// The main window: the native menu bar, the Performance and Details tabs, and the wiring between the sample clock, the process
+/// table, the icon store, the performance model and the two views. Every sample applies a snapshot to the table and reads every
+/// device, whatever is showing, so an exited process gives back its icon on the same tick and the graphs never miss a point. Each
+/// view is refreshed only while it can be seen, and at once when it becomes visible again. tmcs always opens on Performance.
 /// In test mode (TMCS_DIAG set) it also runs the <see cref="TestHarness"/>, stays a background window that never takes focus or
 /// rises above other windows, and never saves the settings.
 /// </summary>
@@ -22,6 +25,7 @@ internal class MainForm : Form, IScenarioTarget
 {
     private const int WmCommand = 0x0111;
     private const int WmInitMenuPopup = 0x0117;
+    private const int WmWindowPosChanged = 0x0047;
 
     /// <summary>A change is saved this long after the last one, so a drag saves once.</summary>
     private const int SaveDelayMs = 2000;
@@ -29,11 +33,14 @@ internal class MainForm : Form, IScenarioTarget
     private readonly AppServices _services;
     private readonly AppSettings _settings;
     private readonly ProcessTable _table;
+    private readonly PerformanceModel _performance;
     private readonly NativeImageList _images;
     private readonly IconStore _icons;
     private readonly HungWindowScanner _hungScanner = new();
     private readonly SampleClock _clock;
-    private readonly TabControl _tabs;
+    private readonly TabStrip _tabs;
+    private readonly TabPage _performancePage;
+    private readonly PerformanceView _performanceView;
     private readonly TabPage _detailsPage;
     private readonly DetailsView _details;
     private readonly NativeMenu _menu;
@@ -58,6 +65,12 @@ internal class MainForm : Form, IScenarioTarget
     private bool _loaded;
 
     private bool _wasMinimized;
+
+    /// <summary>Whether the window was minimized or maximized at the latest WM_WINDOWPOSCHANGED.</summary>
+    private bool _leftNormal;
+
+    /// <summary>True while WinForms handles the move that takes the window from minimized or maximized back to normal.</summary>
+    private bool _restoringToNormal;
 
     public MainForm(AppServices services)
     {
@@ -94,16 +107,20 @@ internal class MainForm : Form, IScenarioTarget
         _table.Added += row => row.IconSlot = _icons.Acquire(row.Info.ImagePath);
         _table.Removed += row => _icons.Release(row.Info.ImagePath);
 
+        _performance = new PerformanceModel(services.Devices);
+
+        _performanceView = new PerformanceView(_performance, _settings) { Dock = DockStyle.Fill };
+        _performanceView.SettingsChanged += (_, _) => ScheduleSave();
+        _performancePage = new TabPage("Performance");
+        _performancePage.Controls.Add(_performanceView);
         _details = new DetailsView(_table, _images, _settings) { Dock = DockStyle.Fill };
         _details.SettingsChanged += (_, _) => ScheduleSave();
         _detailsPage = new TabPage("Details");
         _detailsPage.Controls.Add(_details);
-        _tabs = new TabControl { Dock = DockStyle.Fill };
+        _tabs = new TabStrip { Dock = DockStyle.Fill };
+        _tabs.TabPages.Add(_performancePage); // the first page is selected: tmcs opens on Performance, and never saves the tab
         _tabs.TabPages.Add(_detailsPage);
-        _tabs.SelectedIndexChanged += (_, _) =>
-        {
-            if (DetailsShowing) RefreshView();
-        };
+        _tabs.SelectedIndexChanged += (_, _) => RefreshShowingView();
         Controls.Add(_tabs);
 
         (_menu, _speedMenu) = CreateMenu();
@@ -117,11 +134,15 @@ internal class MainForm : Form, IScenarioTarget
 
     internal ProcessTable Table => _table;
 
+    internal PerformanceModel Performance => _performance;
+
     internal IconStore Icons => _icons;
 
     internal SampleClock Clock => _clock;
 
     internal DetailsView Details => _details;
+
+    internal PerformanceView PerformanceView => _performanceView;
 
     internal TestHarness? Harness => _harness;
 
@@ -143,6 +164,8 @@ internal class MainForm : Form, IScenarioTarget
     }
 
     private bool DetailsShowing => _tabs.SelectedTab == _detailsPage && WindowState != FormWindowState.Minimized;
+
+    private bool PerformanceShowing => _tabs.SelectedTab == _performancePage && WindowState != FormWindowState.Minimized;
 
     private bool TestMode => _services.Options.IsTestMode;
 
@@ -176,10 +199,15 @@ internal class MainForm : Form, IScenarioTarget
         _clock.RefreshNow();
     }
 
-    /// <summary>Test mode: once shown without activation, the window goes to the bottom of the z-order, then the scenario starts.</summary>
+    /// <summary>
+    /// Once shown, the views it hides get their windows: the Details tab and every pane but the visible one. WinForms makes a
+    /// hidden control's window on its first show, and the Details list's took the first switch to Details past 100 ms under load.
+    /// Test mode then sends the window to the bottom of the z-order and starts the scenario, whose first step finds them made.
+    /// </summary>
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        CreateWindows(_tabs);
         if (_harness is null) return;
         SinkToBottom();
         _harness.Start();
@@ -195,7 +223,7 @@ internal class MainForm : Form, IScenarioTarget
     {
         base.OnResize(e);
         var minimized = WindowState == FormWindowState.Minimized;
-        if (_wasMinimized && !minimized && DetailsShowing) RefreshView(); // restored: show the current table at once
+        if (_wasMinimized && !minimized) RefreshShowingView(); // restored: show the current data at once
         _wasMinimized = minimized;
         if (!_loaded) return;
         if (!minimized) _settings.Maximized = WindowState == FormWindowState.Maximized; // minimized keeps what it restores to
@@ -231,9 +259,41 @@ internal class MainForm : Form, IScenarioTarget
             case WmInitMenuPopup when HiWord(m.LParam) == 0:
                 UpdateMenuChecks();
                 break;
+            // A device came or went: the disks and GPUs are listed again at the next sample. DefWndProc still answers it.
+            case User32.WmDeviceChange when m.WParam is User32.DbtDevNodesChanged or User32.DbtDeviceArrival or User32.DbtDeviceRemoveComplete:
+                _performance.MarkDevicesChanged();
+                break;
+            // Not from WindowState: WinForms may already have set it to Normal while the restore was under way.
+            case WmWindowPosChanged:
+                var wasNormal = !_leftNormal;
+                _leftNormal = User32.IsIconic(m.HWnd) || User32.IsZoomed(m.HWnd);
+                if (wasNormal || _leftNormal) break;
+                _restoringToNormal = true;
+                try
+                {
+                    base.WndProc(ref m);
+                }
+                finally
+                {
+                    _restoringToNormal = false;
+                }
+                return;
         }
 
         base.WndProc(ref m);
+    }
+
+    /// <summary>
+    /// Windows has already put a window it restores back at its normal place and size. WinForms then sets the bounds it saved
+    /// when the window left normal, and before Windows 11 it saved the client size, which it turns back into a window size
+    /// without the menu bar: it knows nothing of the native menu. The window lost the menu bar's height on every restore and was
+    /// laid out twice, so a restore keeps the bounds Windows gave it. Bounds set while the window is minimized or maximized are
+    /// therefore not applied at the restore: set them after it.
+    /// </summary>
+    protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
+    {
+        if (_restoringToNormal) (x, y, width, height) = (Left, Top, Width, Height);
+        base.SetBoundsCore(x, y, width, height, specified);
     }
 
     protected override void Dispose(bool disposing)
@@ -243,6 +303,7 @@ internal class MainForm : Form, IScenarioTarget
             _saveTimer.Dispose();
             (_services.Timer as IDisposable)?.Dispose();
             _harness?.Dispose();
+            _performance.Dispose(); // after the timer, so no sample reads a disposed source
         }
 
         // Destroys the window, which detaches the menu, and the list view, which only borrows the image list.
@@ -258,9 +319,12 @@ internal class MainForm : Form, IScenarioTarget
 
     /// <summary>
     /// A scenario step, done synchronously so the runner's stopwatch covers what a user would wait for: the restore with its view
-    /// step and the speed change. Unpaused is always Normal. The window is never activated, and after a restore it is sunk again,
-    /// since restoring can raise it.
+    /// step, the tab and pane switch, and the speed change. Unpaused is always Normal. A Performance step ends by painting the
+    /// view, so the stopwatch covers the repaint too. The window is never activated, and after a restore it is sunk again, since
+    /// restoring can raise it.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The sidebar lists no device of the step's kind: no adapter, or no GPU. The soak
+    /// must not hold another pane in its place, and test mode ends on it.</exception>
     void IScenarioTarget.Apply(ScenarioAction a)
     {
         if (a == ScenarioAction.Minimized)
@@ -277,8 +341,30 @@ internal class MainForm : Form, IScenarioTarget
             SinkToBottom();
         }
 
-        _tabs.SelectedTab = _detailsPage;
+        if (a == ScenarioAction.Details)
+        {
+            _tabs.ShowPage(_detailsPage);
+            _clock.Speed = UpdateSpeed.Normal;
+            return;
+        }
+
+        // Paused pauses on the CPU pane: the Performance tab is where a view could keep working while paused.
+        var kind = a switch
+        {
+            ScenarioAction.Cpu or ScenarioAction.Paused => DeviceKind.Cpu,
+            ScenarioAction.Network => DeviceKind.Network,
+            ScenarioAction.Gpu => DeviceKind.Gpu,
+            _ => throw new ArgumentOutOfRangeException(nameof(a), a, null),
+        };
+        _tabs.ShowPage(_performancePage);
         _clock.Speed = a == ScenarioAction.Paused ? UpdateSpeed.Paused : UpdateSpeed.Normal;
+        // The first listed of its kind: hidden adapters are not listed, and GPUs are listed from GPU 0.
+        if (!_performanceView.Sidebar.SelectFirst(kind))
+            throw new InvalidOperationException($"The scenario step {ScenarioParser.Name(a)} needs a {kind} device, and the sidebar lists none.");
+        // Update is only documented to paint its own window, so the sidebar and the pane, child windows, are painted too.
+        _performanceView.Update();
+        _performanceView.Sidebar.Update();
+        _performanceView.VisiblePane.Update();
     }
 
     /// <summary>Minimizes the window without activating it. Tests pin the minimized position off-screen.</summary>
@@ -295,11 +381,21 @@ internal class MainForm : Form, IScenarioTarget
         return (bar, speed);
     }
 
+    /// <summary>Makes the windows of <paramref name="control"/> and everything in it, shown or not, each parent before its children.</summary>
+    private static void CreateWindows(Control control)
+    {
+        _ = control.Handle;
+        foreach (Control child in control.Controls) CreateWindows(child);
+    }
+
     private static int LoWord(nint value) => (int)(value & 0xFFFF);
 
     private static int HiWord(nint value) => (int)((value >> 16) & 0xFFFF);
 
-    /// <summary>One sample: read a snapshot, apply it to the table, and refresh the view if it can be seen.</summary>
+    /// <summary>
+    /// One sample: read a snapshot, apply it to the table, read every device at the same time stamp, and refresh the view that can
+    /// be seen.
+    /// </summary>
     private void OnSample()
     {
         try
@@ -309,11 +405,23 @@ internal class MainForm : Form, IScenarioTarget
         catch (Exception e)
         {
             Debug.WriteLine(e);
-            return; // a failed read skips the tick: the list may be half-filled, so the table keeps the last snapshot's rows
+            // A failed read skips the whole tick, devices included: the list may be half-filled, so the table keeps the last
+            // snapshot's rows, and every graph misses the same point rather than half a tick being taken.
+            return;
         }
 
-        _table.Apply(_snapshot, Stopwatch.GetElapsedTime(_startTimestamp).Ticks); // TimeSpan ticks are 100 ns
+        var t = Stopwatch.GetElapsedTime(_startTimestamp).Ticks; // TimeSpan ticks are 100 ns
+        _table.Apply(_snapshot, t);
+        _performance.Beats.Note(t, _clock.Timed, _clock.Interval100Ns);
+        _performance.Sample(t, _snapshot);
+        RefreshShowingView();
+    }
+
+    /// <summary>Refreshes the view that can be seen, if any.</summary>
+    private void RefreshShowingView()
+    {
         if (DetailsShowing) RefreshView();
+        else if (PerformanceShowing) _performanceView.RefreshVisible();
     }
 
     /// <summary>Shows the current table. Apply resets every row's status, so the hung scan comes first.</summary>
@@ -397,6 +505,31 @@ internal class MainForm : Form, IScenarioTarget
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Debug.WriteLine(e);
+        }
+    }
+
+    /// <summary>
+    /// The tab strip. <see cref="ShowPage"/> selects a page from code without moving the focus: selecting through
+    /// <see cref="TabControl.SelectedTab"/> focuses the page's first control, and focusing a control of an inactive window
+    /// activates the window, which test mode's must never be. It raises only SelectedIndexChanged, not Selecting, Selected or
+    /// Deselecting, which nothing here subscribes to.
+    /// </summary>
+    internal sealed class TabStrip : TabControl
+    {
+        private const uint TcmSetCurSel = 0x1300 + 12;
+
+        public void ShowPage(TabPage page)
+        {
+            var index = TabPages.IndexOf(page);
+            if (index < 0 || index == SelectedIndex) return;
+            if (!IsHandleCreated)
+            {
+                SelectedIndex = index; // only recorded until the handle exists
+                return;
+            }
+
+            User32.SendMessage(Handle, TcmSetCurSel, index, 0);
+            OnSelectedIndexChanged(EventArgs.Empty); // shows the page and raises SelectedIndexChanged, without the focus move
         }
     }
 }

@@ -1,5 +1,6 @@
 using Tmcs.Icons;
 using Tmcs.Native;
+using Tmcs.Performance;
 using Tmcs.Processes;
 using Tmcs.Sampling;
 using Tmcs.Settings;
@@ -8,8 +9,9 @@ namespace Tmcs;
 
 /// <summary>
 /// The outside world <see cref="MainForm"/> runs against. Tests pass fakes.
-/// The form takes ownership of <see cref="GenericIcon"/> (it destroys it through <see cref="Icons"/>) and of <see cref="Timer"/>
-/// (it disposes it when it is <see cref="IDisposable"/>).
+/// The form takes ownership of <see cref="GenericIcon"/> (it destroys it through <see cref="Icons"/>), of <see cref="Timer"/>
+/// (it disposes it when it is <see cref="IDisposable"/>) and of <see cref="Devices"/> (it disposes them through its
+/// <see cref="PerformanceModel"/>).
 /// </summary>
 internal sealed record AppServices(
     IProcessSnapshotSource Snapshots,
@@ -18,7 +20,8 @@ internal sealed record AppServices(
     nint GenericIcon,
     ISampleTimer Timer,
     SettingsStore Store,
-    LaunchOptions Options)
+    LaunchOptions Options,
+    DeviceSources Devices)
 {
     /// <summary>The real system sources. Call on the UI thread: the sample timer ticks on the thread that creates it.</summary>
     public static AppServices CreateReal(LaunchOptions o)
@@ -34,6 +37,7 @@ internal sealed record AppServices(
             generic,
             new WinFormsSampleTimer(),
             new SettingsStore(SettingsStore.DefaultPath),
-            o);
+            o,
+            DeviceSources.CreateReal());
     }
 }

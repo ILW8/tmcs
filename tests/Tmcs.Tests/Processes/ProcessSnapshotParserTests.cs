@@ -46,6 +46,19 @@ public class ProcessSnapshotParserTests
     }
 
     [Fact]
+    public void Parse_reads_the_working_set()
+    {
+        var buf = new byte[0x200 + 0x100];
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x00), 0x200);
+        BinaryPrimitives.WriteInt64LittleEndian(buf.AsSpan(0x200 + 0x90), 0x9000);
+        var list = new List<RawProcess>();
+        ProcessSnapshotParser.Parse(buf, 0, list);
+
+        Assert.Equal(0, list[0].WorkingSet);
+        Assert.Equal(0x9000, list[1].WorkingSet);
+    }
+
+    [Fact]
     public void Live_snapshot_contains_System_and_this_process()
     {
         var list = new List<RawProcess>();

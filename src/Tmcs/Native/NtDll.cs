@@ -6,6 +6,18 @@ internal static unsafe partial class NtDll
 {
     public const int SystemProcessInformation = 5;
 
+    /// <summary><c>SystemPerformanceInformation</c>: page counts for available memory, commit and the pools.</summary>
+    public const int SystemPerformanceInformation = 2;
+
+    /// <summary><c>SystemPageFileInformation</c>: a chain of entries whose names look like <c>\??\C:\pagefile.sys</c>.</summary>
+    public const int SystemPageFileInformation = 18;
+
+    /// <summary><c>SystemMemoryListInformation</c>: page counts of the zero, free, modified and standby lists.</summary>
+    public const int SystemMemoryListInformation = 80;
+
+    /// <summary><c>SystemTimeOfDayInformation</c>: a 48-byte block whose first two longs are <c>BootTime</c> and <c>CurrentTime</c> (100 ns, FILETIME epoch).</summary>
+    public const int SystemTimeOfDayInformation = 3;
+
     /// <summary><c>ProcessCommandLineInformation</c>: a <see cref="UnicodeString"/> followed by its characters, in one block.</summary>
     public const int ProcessCommandLineInformation = 60;
 

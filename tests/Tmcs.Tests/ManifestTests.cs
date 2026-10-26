@@ -45,4 +45,9 @@ public class ManifestTests
     [Fact]
     public void Native_libraries_load_only_from_System32() =>
         Assert.Equal(DllImportSearchPath.System32, typeof(MainForm).Assembly.GetCustomAttribute<DefaultDllImportSearchPathsAttribute>()?.Paths);
+
+    // tmcs runs elevated with the user's environment: DOTNET_STARTUP_HOOKS must not load code into it.
+    [Fact]
+    public void Startup_hooks_are_disabled() =>
+        Assert.Equal("false", Load("Tmcs.csproj").Descendants("StartupHookSupport").Single().Value);
 }

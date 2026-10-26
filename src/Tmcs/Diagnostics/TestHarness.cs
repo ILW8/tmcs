@@ -61,7 +61,9 @@ internal sealed class TestHarness : IDisposable
             (int)User32.GetGuiResources(process, User32.GrGdiObjects),
             (int)User32.GetGuiResources(process, User32.GrUserObjects),
             _self.TotalProcessorTime.TotalMilliseconds,
-            _runner?.LastSwitchMs ?? 0);
+            _runner?.LastSwitchMs ?? 0,
+            _form.Performance.Devices.Count,
+            _form.Performance.GpuInstances);
     }
 
     public void Dispose()

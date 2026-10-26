@@ -18,6 +18,8 @@ namespace Tmcs.Diagnostics;
 /// <param name="User">The process's USER objects.</param>
 /// <param name="CpuMs">The process's CPU time since start, in milliseconds.</param>
 /// <param name="SwitchMs">How long switching into the running scenario step took, in milliseconds; 0 without a scenario.</param>
+/// <param name="Devices">Devices the performance model lists, hidden adapters included.</param>
+/// <param name="GpuInstances">GPU Engine counter instances the GPU source tracks: they must stay bounded under GPU process churn.</param>
 internal readonly record struct DiagSnapshot(
     DateTime Utc,
     string Step,
@@ -33,4 +35,6 @@ internal readonly record struct DiagSnapshot(
     int Gdi,
     int User,
     double CpuMs,
-    double SwitchMs);
+    double SwitchMs,
+    int Devices,
+    int GpuInstances);

@@ -31,7 +31,10 @@ internal sealed class AppSettings
 
     public bool SortDescending { get; set; }
 
-    /// <summary>Unused until M2.</summary>
+    /// <summary>
+    /// The network adapters the Performance sidebar leaves out, by interface GUID (<c>{xxxxxxxx-…}</c>, lowercase, with braces),
+    /// never by name. Hidden adapters are still sampled.
+    /// </summary>
     public List<string> HiddenAdapters { get; set; } = [];
 
     /// <summary>The owner's Task Manager layout: the 11 columns at their default widths, the first eight visible, in enum order.</summary>
@@ -83,7 +86,16 @@ internal sealed class AppSettings
         }
 
         if (!Enum.IsDefined(UpdateSpeed)) UpdateSpeed = UpdateSpeed.Normal;
-        HiddenAdapters ??= [];
+
+        // Only GUIDs, each once, in the one format the sidebar writes.
+        var hidden = new List<string>();
+        var guids = new HashSet<Guid>();
+        foreach (var entry in HiddenAdapters ?? [])
+        {
+            if (Guid.TryParse(entry, out var guid) && guids.Add(guid)) hidden.Add(guid.ToString("B"));
+        }
+
+        HiddenAdapters = hidden;
         // ReSharper restore ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
         // ReSharper restore NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
     }

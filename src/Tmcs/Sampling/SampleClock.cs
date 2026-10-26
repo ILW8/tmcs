@@ -23,6 +23,12 @@ internal sealed class SampleClock
     /// <summary>Every <see cref="Sample"/> raised so far.</summary>
     public long SamplesTaken { get; private set; }
 
+    /// <summary>Whether the sample being raised comes from the timer rather than <see cref="RefreshNow"/>.</summary>
+    public bool Timed { get; private set; }
+
+    /// <summary>The speed's sampling interval in 100-ns units; while paused, the last running speed's.</summary>
+    public long Interval100Ns { get; private set; }
+
     /// <summary>Setting it reconfigures the timer at once. It never takes a sample.</summary>
     public UpdateSpeed Speed
     {
@@ -44,7 +50,7 @@ internal sealed class SampleClock
     };
 
     /// <summary>Takes one sample now, running or paused. The timer is left as it is.</summary>
-    public void RefreshNow() => RaiseSample();
+    public void RefreshNow() => RaiseSample(timed: false);
 
     // Works out the interval before touching the timer, so an invalid speed throws and leaves the timer as it was.
     private void Apply(UpdateSpeed speed)
@@ -55,18 +61,21 @@ internal sealed class SampleClock
             return;
         }
 
-        _timer.IntervalMs = IntervalFor(speed);
+        var interval = IntervalFor(speed);
+        _timer.IntervalMs = interval;
         _timer.Enabled = true;
+        Interval100Ns = interval * 10_000L;
     }
 
     // Belt and braces: a disabled timer should never tick, but a tick already queued when Paused was set must not sample.
     private void OnTick(object? sender, EventArgs e)
     {
-        if (_speed != UpdateSpeed.Paused) RaiseSample();
+        if (_speed != UpdateSpeed.Paused) RaiseSample(timed: true);
     }
 
-    private void RaiseSample()
+    private void RaiseSample(bool timed)
     {
+        Timed = timed;
         SamplesTaken++;
         Sample?.Invoke();
     }
