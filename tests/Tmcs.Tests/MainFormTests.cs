@@ -5,6 +5,7 @@ using Tmcs.Details;
 using Tmcs.Icons;
 using Tmcs.Native;
 using Tmcs.Performance;
+using Tmcs.Performance.Views;
 using Tmcs.Processes;
 using Tmcs.Sampling;
 using Tmcs.Settings;
@@ -96,6 +97,7 @@ public sealed partial class MainFormTests : IDisposable
         var saved = AppSettings.CreateDefault();
         saved.UpdateSpeed = UpdateSpeed.High;
         saved.AlwaysOnTop = true;
+        saved.LinuxStyleCpu = true;
         saved.WindowX = 100; // on the owner's screen, but not inside the form's only working area
         saved.WindowY = 100;
         saved.WindowWidth = 900;
@@ -111,6 +113,7 @@ public sealed partial class MainFormTests : IDisposable
         Assert.Equal(1, rig.Form.ZOrderChangesAtCreation); // the topmost move, made as the window was created, before it showed
         Assert.All(rig.Form.ZOrderChanges, flags => Assert.Equal(SwpNoActivate, flags & SwpNoActivate)); // none activates the window
         Assert.True(Checked(rig.Form, CommandIds.AlwaysOnTop));
+        Assert.True(Checked(rig.Form, CommandIds.LinuxStyleCpu));
         var area = OffscreenMainForm.OffscreenArea;
         Assert.Equal(new Rectangle(area.X + (area.Width - 900) / 2, area.Y + (area.Height - 600) / 2, 900, 600), rig.Form.WindowRect);
     });
@@ -164,8 +167,8 @@ public sealed partial class MainFormTests : IDisposable
         var view = GetSubMenu(bar, 2);
         Assert.Equal(["Run &new task", "E&xit"], Texts(file));
         Assert.Equal([CommandIds.RunNewTask, CommandIds.Exit], Ids(file));
-        Assert.Equal(["&Always on top"], Texts(options));
-        Assert.Equal([CommandIds.AlwaysOnTop], Ids(options));
+        Assert.Equal(["&Always on top", "&Linux-style CPU %"], Texts(options)); // the second is the owner's, not Task Manager's
+        Assert.Equal([CommandIds.AlwaysOnTop, CommandIds.LinuxStyleCpu], Ids(options));
         Assert.Equal(["&Refresh now", "&Update speed"], Texts(view));
         Assert.Equal(CommandIds.RefreshNow, (int)GetMenuItemID(view, 0));
         var speed = GetSubMenu(view, 1);
@@ -175,14 +178,40 @@ public sealed partial class MainFormTests : IDisposable
         User32.SendMessage(rig.Form.Handle, WmInitMenuPopup, speed, 1);
         Assert.Equal([false, true, false, false], Checks(speed));
         User32.SendMessage(rig.Form.Handle, WmInitMenuPopup, options, 1);
-        Assert.Equal([false], Checks(options));
+        Assert.Equal([false, false], Checks(options));
 
         rig.Form.Command(CommandIds.SpeedPaused);
         rig.Form.Command(CommandIds.AlwaysOnTop);
         User32.SendMessage(rig.Form.Handle, WmInitMenuPopup, speed, 1);
         Assert.Equal([false, false, false, true], Checks(speed));
         User32.SendMessage(rig.Form.Handle, WmInitMenuPopup, options, 1);
-        Assert.Equal([true], Checks(options));
+        Assert.Equal([true, false], Checks(options));
+
+        rig.Form.Command(CommandIds.LinuxStyleCpu);
+        User32.SendMessage(rig.Form.Handle, WmInitMenuPopup, options, 1);
+        Assert.Equal([true, true], Checks(options));
+    });
+
+    [Fact]
+    public void Linux_style_cpu_command_repaints_the_cpu_pane_at_once_even_while_paused() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        rig.Form.Command(CommandIds.SpeedPaused);
+        var pane = rig.Form.PerformanceView.VisiblePane; // the CPU's: tmcs opens on Performance with CPU selected
+        Assert.IsType<CpuPane>(pane);
+        var paints = pane.RepaintCount;
+
+        rig.Form.Command(CommandIds.LinuxStyleCpu);
+
+        Assert.True(pane.RepaintCount > paints, "turning Linux-style CPU % on did not repaint the CPU pane");
+        Assert.True(Checked(rig.Form, CommandIds.LinuxStyleCpu));
+        paints = pane.RepaintCount;
+
+        rig.Form.Command(CommandIds.LinuxStyleCpu);
+
+        Assert.True(pane.RepaintCount > paints, "turning Linux-style CPU % off did not repaint the CPU pane");
+        Assert.False(Checked(rig.Form, CommandIds.LinuxStyleCpu));
     });
 
     [Fact]
@@ -516,6 +545,7 @@ public sealed partial class MainFormTests : IDisposable
         rig.Form.ShowOffscreen();
         rig.Form.Command(CommandIds.SpeedLow);
         rig.Form.Command(CommandIds.AlwaysOnTop);
+        rig.Form.Command(CommandIds.LinuxStyleCpu);
         var bounds = rig.Form.WindowRect;
 
         rig.Form.Close();
@@ -523,6 +553,7 @@ public sealed partial class MainFormTests : IDisposable
         var loaded = new SettingsStore(SettingsPath).Load();
         Assert.Equal(UpdateSpeed.Low, loaded.UpdateSpeed);
         Assert.True(loaded.AlwaysOnTop);
+        Assert.True(loaded.LinuxStyleCpu);
         Assert.Equal(bounds, new Rectangle(loaded.WindowX!.Value, loaded.WindowY!.Value, loaded.WindowWidth, loaded.WindowHeight));
         Assert.False(loaded.Maximized);
     });

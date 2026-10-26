@@ -9,6 +9,7 @@ internal static class CommandIds
     public const int Exit = 100;
     public const int RunNewTask = 101;
     public const int AlwaysOnTop = 200;
+    public const int LinuxStyleCpu = 201;
     public const int RefreshNow = 300;
 
     // The four speeds must stay contiguous and in UpdateSpeed order: CheckMenuRadioItem takes them as one range.

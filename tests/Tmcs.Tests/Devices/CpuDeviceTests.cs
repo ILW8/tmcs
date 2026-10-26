@@ -37,19 +37,33 @@ public class CpuDeviceTests
         Assert.Equal(60, cpu.Handles);
     }
 
+    // Linux-style is the busy time with 100% for each of the four processors, not Task Manager's utility scaled up.
+    [Theory]
+    [InlineData(false, 25)]
+    [InlineData(true, 50)]
+    public void Shown_utilization_is_task_managers_or_the_busy_time_per_processor(bool linuxStyle, double shown)
+    {
+        var cpu = new CpuDevice(new FakeCpuSource { Total = 25, Time = 12.5 });
+        cpu.Sample(10_000_000, []);
+
+        Assert.Equal(shown, cpu.ShownUtilization(linuxStyle), 6);
+    }
+
     [Fact]
     public void Failed_read_appends_nothing_and_keeps_latest_values()
     {
-        var fake = new FakeCpuSource { Total = 25, Performance = 98 };
+        var fake = new FakeCpuSource { Total = 25, Time = 12.5, Performance = 98 };
         var cpu = new CpuDevice(fake);
         cpu.Sample(10_000_000, [Proc(2, 10)]);
 
         fake.Succeeds = false;
         fake.Total = 90;
+        fake.Time = 70;
         cpu.Sample(20_000_000, [Proc(2, 10), Proc(3, 20)]);
 
         Assert.Equal(1, cpu.History.Count);
         Assert.Equal(25, cpu.Utilization);
+        Assert.Equal(50, cpu.ShownUtilization(linuxStyle: true), 6);
         Assert.Equal(4410, cpu.SpeedMhz, 6);
     }
 
@@ -96,10 +110,10 @@ public class CpuDeviceTests
         using var src = new PdhCpuSource();
         Assert.Equal(CpuMath.MachineLogicalProcessors(), src.Info.LogicalProcessors);
         var loads = new CpuLoad[src.Info.LogicalProcessors];
-        src.Read(loads, out _, out _);
+        src.Read(loads, out _, out _, out _);
         Thread.Sleep(1100);
 
-        Assert.True(src.Read(loads, out var total, out var perf));
+        Assert.True(src.Read(loads, out var total, out var time, out var perf));
         foreach (var l in loads)
         {
             Assert.InRange(l.Utility, 0, 100);
@@ -107,6 +121,9 @@ public class CpuDeviceTests
             Assert.True(l.Privileged <= l.Utility + 1, $"privileged {l.Privileged} > utility {l.Utility}");
         }
         Assert.InRange(total, 0, 100);
+        // Not compared with the utility: below base speed the busy time is the larger. Over 1.1 s some processor is always busy.
+        Assert.InRange(time, 0, 100);
+        Assert.True(time > 0);
         Assert.True(perf > 0);
     }
 
@@ -129,11 +146,11 @@ public class CpuDeviceTests
     {
         using var src = new PdhCpuSource();
         var loads = new CpuLoad[src.Info.LogicalProcessors];
-        src.Read(loads, out _, out _);
-        src.Read(loads, out _, out _);
+        src.Read(loads, out _, out _, out _);
+        src.Read(loads, out _, out _, out _);
 
         var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 100; i++) src.Read(loads, out _, out _);
+        for (var i = 0; i < 100; i++) src.Read(loads, out _, out _, out _);
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 }

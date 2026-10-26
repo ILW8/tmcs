@@ -411,7 +411,7 @@ internal sealed class Sidebar : ScrollableControl
         {
             case CpuDevice cpu:
                 painter.Paint(g, graph, history, 0, 100, 0); // no kernel series
-                Pair(g, PerfFormat.Percent(cpu.Utilization), PerfFormat.Ghz(cpu.SpeedMhz), line1, right);
+                Pair(g, PerfFormat.Percent(cpu.ShownUtilization(_settings.LinuxStyleCpu)), PerfFormat.Ghz(cpu.SpeedMhz), line1, right);
                 break;
             case MemoryDevice memory:
                 painter.Paint(g, graph, history, 0, memory.Info.TotalPhysical, 0);

@@ -382,7 +382,7 @@ internal class MainForm : Form, IScenarioTarget
             ("&High", CommandIds.SpeedHigh), ("&Normal", CommandIds.SpeedNormal), ("&Low", CommandIds.SpeedLow), ("&Paused", CommandIds.SpeedPaused));
         var bar = NativeMenu.Bar()
             .AddPopup("&File", NativeMenu.Popup(("Run &new task", CommandIds.RunNewTask), ("E&xit", CommandIds.Exit)))
-            .AddPopup("&Options", NativeMenu.Popup(("&Always on top", CommandIds.AlwaysOnTop)))
+            .AddPopup("&Options", NativeMenu.Popup(("&Always on top", CommandIds.AlwaysOnTop), ("&Linux-style CPU %", CommandIds.LinuxStyleCpu)))
             .AddPopup("&View", NativeMenu.Popup(("&Refresh now", CommandIds.RefreshNow)).AddPopup("&Update speed", speed));
         return (bar, speed);
     }
@@ -454,6 +454,12 @@ internal class MainForm : Form, IScenarioTarget
                 ApplyAlwaysOnTop();
                 ScheduleSave();
                 return true;
+            case CommandIds.LinuxStyleCpu:
+                _settings.LinuxStyleCpu = !_settings.LinuxStyleCpu;
+                // From the last sample: paused, no sample would come to show the other number.
+                if (PerformanceShowing) _performanceView.RefreshVisible();
+                ScheduleSave();
+                return true;
             case CommandIds.RefreshNow:
                 _clock.RefreshNow();
                 return true;
@@ -483,6 +489,7 @@ internal class MainForm : Form, IScenarioTarget
     {
         _speedMenu.CheckRadio(CommandIds.SpeedHigh, CommandIds.SpeedPaused, CommandIds.ForSpeed(_clock.Speed));
         _menu.SetChecked(CommandIds.AlwaysOnTop, _settings.AlwaysOnTop);
+        _menu.SetChecked(CommandIds.LinuxStyleCpu, _settings.LinuxStyleCpu);
     }
 
     /// <summary>Restarts the one-shot save timer. Test mode never saves.</summary>

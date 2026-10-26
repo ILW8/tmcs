@@ -35,6 +35,7 @@ public sealed class SettingsTests : IDisposable
         Assert.Null(s.WindowY);
         Assert.False(s.Maximized);
         Assert.False(s.AlwaysOnTop);
+        Assert.False(s.LinuxStyleCpu);
         Assert.Equal(UpdateSpeed.Normal, s.UpdateSpeed);
         Assert.Equal(DetailsColumn.Name, s.SortColumn);
         Assert.False(s.SortDescending);
@@ -60,6 +61,7 @@ public sealed class SettingsTests : IDisposable
         s.WindowHeight = 600;
         s.Maximized = true;
         s.AlwaysOnTop = true;
+        s.LinuxStyleCpu = true;
         s.SortColumn = DetailsColumn.Cpu;
         s.SortDescending = true;
         s.HiddenAdapters.Add("{3f2504e0-4f89-11d3-9a0c-0305e82c3301}");
@@ -80,6 +82,7 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(600, loaded.WindowHeight);
         Assert.True(loaded.Maximized);
         Assert.True(loaded.AlwaysOnTop);
+        Assert.True(loaded.LinuxStyleCpu);
         Assert.Equal(DetailsColumn.Cpu, loaded.SortColumn);
         Assert.True(loaded.SortDescending);
         Assert.Equal(["{3f2504e0-4f89-11d3-9a0c-0305e82c3301}"], loaded.HiddenAdapters);

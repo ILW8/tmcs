@@ -21,8 +21,9 @@ internal interface ICpuSource : IDisposable
     /// <summary>Fills one entry per logical processor, in processor order. False means the read failed and nothing was written.</summary>
     /// <param name="perProcessor">One entry per logical processor.</param>
     /// <param name="totalUtility">Whole-machine utility, 0 to 100.</param>
+    /// <param name="totalTime">Whole-machine processor time, 0 to 100: the share of time busy, not scaled by speed.</param>
     /// <param name="performancePercent">The processors' current speed as a percentage of base; above 100 when boosting.</param>
-    bool Read(Span<CpuLoad> perProcessor, out double totalUtility, out double performancePercent);
+    bool Read(Span<CpuLoad> perProcessor, out double totalUtility, out double totalTime, out double performancePercent);
 
     TimeSpan UpTime();
 }
