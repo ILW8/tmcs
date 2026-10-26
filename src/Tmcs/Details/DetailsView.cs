@@ -23,13 +23,13 @@ internal sealed class DetailsView : UserControl, ICellSource
     private const int SetPriorityPosition = 3;
     private const int CopyPosition = 8;
 
-    // The bottom band and its End task button, in 96-DPI units (spec 4.2). Not measured from Task Manager: see
+    // The bottom band and its End task button, in 96-DPI units (spec 4.2), measured from Task Manager: see
     // docs/superpowers/reference/2026-10-26-taskmgr-details-button.md.
     private const int BandHeight = 48;
-    private const int ButtonWidth = 96;
-    private const int ButtonHeight = 28;
-    private const int ButtonTop = 10; // below the band's top
-    private const int ButtonRightMargin = 16;
+    private const int ButtonWidth = 85;
+    private const int ButtonHeight = 23;
+    private const int ButtonTop = 12; // below the band's top
+    private const int ButtonRightMargin = 8;
 
     private readonly ProcessTable _table;
     private readonly AppSettings _settings;

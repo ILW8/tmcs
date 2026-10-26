@@ -340,14 +340,14 @@ public partial class DetailsActionsTests
         var width = view.ClientSize.Width;
         var height = view.ClientSize.Height;
 
-        // 96-DPI units: a 48 band at the bottom, an End task button 96x28 that is 10 below the band top and 16 off the right edge.
+        // 96-DPI units: a 48 band at the bottom, an End task button 85x23 that is 12 below the band top and 8 off the right edge.
         view.LayoutBand(96);
         Assert.Equal(new Rectangle(0, 0, width, height - 48), rig.List.Bounds);
-        Assert.Equal(new Rectangle(width - 16 - 96, height - 48 + 10, 96, 28), button.Bounds);
+        Assert.Equal(new Rectangle(width - 8 - 85, height - 48 + 12, 85, 23), button.Bounds);
 
         view.LayoutBand(192);
         Assert.Equal(new Rectangle(0, 0, width, height - 96), rig.List.Bounds);
-        Assert.Equal(new Rectangle(width - 32 - 192, height - 96 + 20, 192, 56), button.Bounds);
+        Assert.Equal(new Rectangle(width - 16 - 170, height - 96 + 24, 170, 46), button.Bounds);
 
         // At the control's own DPI, which the layout pass uses.
         var dpi = view.DeviceDpi;
