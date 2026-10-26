@@ -237,6 +237,22 @@ public sealed partial class MainFormTests : IDisposable
     });
 
     [Fact]
+    public void Ticks_are_grid_beats_and_quick_refreshes_are_not() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        var beats = rig.Form.Performance.Beats;
+        Assert.Equal(1, beats.Count); // the first sample, as the window loaded
+
+        rig.Timer.Fire();
+        Assert.Equal(2, beats.Count);
+        for (var i = 0; i < 3; i++) Assert.True(rig.Form.PressKey(Keys.F5)); // well within a second of the tick
+        Assert.Equal(2, beats.Count);
+        rig.Timer.Fire();
+        Assert.Equal(3, beats.Count);
+    });
+
+    [Fact]
     public void Every_sample_feeds_the_model_on_any_tab_and_minimized() => Sta.Run(() =>
     {
         using var rig = new Rig(SettingsPath);

@@ -61,7 +61,7 @@ internal sealed class MemoryPane : PerformancePane
         var graph = Graph(info);
         var total = memory.Info.TotalPhysical;
         Captions(g, graph, "Memory usage", PerfFormat.Size(total), bottom: true);
-        _painter.Paint(g, graph, memory.History, 0, total, 3);
+        _painter.Paint(g, graph, memory.History, 0, total, 3, Beats);
 
         PaintComposition(g, memory, info);
         PaintInfo(g, info, Color.Empty, Color.Empty); // no item has a legend marker

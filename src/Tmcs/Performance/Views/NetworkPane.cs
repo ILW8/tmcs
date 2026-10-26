@@ -87,7 +87,7 @@ internal sealed class NetworkPane : PerformancePane
         var graph = Graph(info);
         var scale = ScaleOf(net);
         Captions(g, graph, "Throughput", scale.Caption, bottom: true);
-        _painter.Paint(g, graph, net.History, 0, scale.Max, 3, second: 1);
+        _painter.Paint(g, graph, net.History, 0, scale.Max, 3, Beats, second: 1);
 
         PaintInfo(g, info, GraphPalettes.Network.Line, GraphPalettes.Network.SecondLine);
         if (net.Wifi is { } wifi) PaintSignal(g, info, NetworkDevice.SignalBars(wifi.SignalQuality));

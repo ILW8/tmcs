@@ -42,14 +42,16 @@ internal sealed class GraphPainter : IDisposable
     /// <summary>
     /// Paints a graph whose border is the outer pixels of <paramref name="bounds"/>, or nothing when <paramref name="bounds"/>
     /// is narrower or shorter than 3 px. Values are clamped to [0, <paramref name="max"/>], and NaN counts as 0;
-    /// <paramref name="max"/> &lt;= 0 draws no data. <paramref name="gridSamples"/> 0 means no grid. <paramref name="second"/>
-    /// is the series drawn in the palette's second style, or -1.
+    /// <paramref name="max"/> &lt;= 0 draws no data. <paramref name="gridSamples"/> 0 means no grid; otherwise a vertical line
+    /// sits on every <paramref name="gridSamples"/>-th of <paramref name="beats"/>, and without them there are only the rows.
+    /// <paramref name="second"/> is the series drawn in the palette's second style, or -1.
     /// <para>
     /// <see cref="Graphics.Save"/> allocates on every call, so the clip and the modes this changes are put back by hand. The
     /// caller's clip comes back as its bounding rectangle, or as infinite when it was.
     /// </para>
     /// </summary>
-    public void Paint(Graphics g, Rectangle bounds, History history, int series, float max, int gridSamples, int second = -1)
+    public void Paint(Graphics g, Rectangle bounds, History history, int series, float max, int gridSamples,
+        GridBeats? beats = null, int second = -1)
     {
         if (bounds.Width < MinSide || bounds.Height < MinSide) return;
         int left = bounds.X, right = bounds.Right - 1, top = bounds.Y, bottom = bounds.Bottom - 1;
@@ -63,7 +65,7 @@ internal sealed class GraphPainter : IDisposable
             g.PixelOffsetMode = PixelOffsetMode.Default;
             g.IntersectClip(new Rectangle(left + 1, top + 1, bounds.Width - 2, bounds.Height - 2));
             g.FillRectangle(Brushes.White, left, top, bounds.Width, bounds.Height);
-            DrawGrid(g, _grid, history, left, right, top, bottom, gridSamples);
+            DrawGrid(g, _grid, history, beats, left, right, top, bottom, gridSamples);
 
             if (max > 0 && history.Count > 1)
             {
@@ -72,9 +74,10 @@ internal sealed class GraphPainter : IDisposable
                 if (n > 1)
                 {
                     g.SmoothingMode = SmoothingMode.AntiAlias;
-                    FillSeries(g, _fill, _gridInFill, history, series, max, gridSamples, first, left, right, top, bottom);
+                    FillSeries(g, _fill, _gridInFill, history, series, max, gridSamples, beats, first, left, right, top, bottom);
                     if (second >= 0 && _secondFilled)
-                        FillSeries(g, _secondFill, _gridInSecondFill, history, second, max, gridSamples, first, left, right, top, bottom);
+                        FillSeries(g, _secondFill, _gridInSecondFill, history, second, max, gridSamples, beats, first, left, right,
+                            top, bottom);
                     if (second >= 0)
                     {
                         BuildLine(history, second, max, first, left, right, top, bottom);
@@ -98,7 +101,7 @@ internal sealed class GraphPainter : IDisposable
     }
 
     void FillSeries(Graphics g, Brush fill, Brush gridInFill, History history, int series, float max, int gridSamples,
-        int first, int left, int right, int top, int bottom)
+        GridBeats? beats, int first, int left, int right, int top, int bottom)
     {
         var n = BuildLine(history, series, max, first, left, right, top, bottom);
         _points[n] = new PointF(_points[n - 1].X, bottom);
@@ -114,34 +117,34 @@ internal sealed class GraphPainter : IDisposable
         _clip.AddPolygon(polygon);
         g.SetClip(_clip, CombineMode.Intersect);
         g.SmoothingMode = SmoothingMode.None;
-        DrawGrid(g, gridInFill, history, left, right, top, bottom, gridSamples);
+        DrawGrid(g, gridInFill, history, beats, left, right, top, bottom, gridSamples);
         g.SetClip(clip);
         g.SmoothingMode = SmoothingMode.AntiAlias;
     }
 
     /// <summary>
     /// Puts the points of <paramref name="series"/> in the buffer, each rounded to a whole pixel as Task Manager does: at a
-    /// fractional y, an anti-aliased 1-px line is two rows of a lighter color. The x rounds as the grid's does, so points on
-    /// a grid sample sit on its line.
+    /// fractional y, an anti-aliased 1-px line is two rows of a lighter color. The x comes from <see cref="XAt"/>, as the
+    /// grid lines' does, so a point on a beat sits on its line.
     /// </summary>
     int BuildLine(History history, int series, float max, int first, int left, int right, int top, int bottom)
     {
         var latest = history.LatestTime;
-        var width = (double)(right - left);
         var height = (double)(bottom - top);
         var n = 0;
         for (var i = first; i < history.Count; i++)
         {
             var value = history.ValueAt(series, i);
             var v = float.IsNaN(value) ? 0f : Math.Clamp(value, 0f, max); // Clamp passes NaN through, and GDI+ must not get it
-            var x = right - (latest - history.TimeAt(i)) / (double)History.Window100Ns * width;
             var y = bottom - v / max * height;
-            _points[n++] = new PointF((float)Math.Round(x, MidpointRounding.AwayFromZero), (float)Math.Round(y, MidpointRounding.AwayFromZero));
+            _points[n++] = new PointF(XAt(history.TimeAt(i), latest, left, right), (float)Math.Round(y, MidpointRounding.AwayFromZero));
         }
         return n;
     }
 
-    static void DrawGrid(Graphics g, Brush brush, History history, int left, int right, int top, int bottom, int gridSamples)
+    /// <summary>The rows, then a line on every <paramref name="gridSamples"/>-th beat from the window's left edge to the newest point.</summary>
+    static void DrawGrid(Graphics g, Brush brush, History history, GridBeats? beats, int left, int right, int top, int bottom,
+        int gridSamples)
     {
         if (gridSamples <= 0) return;
         var width = right - left + 1;
@@ -149,15 +152,25 @@ internal sealed class GraphPainter : IDisposable
         for (var k = 1; k <= 9; k++)
             g.FillRectangle(brush, left, (int)Math.Ceiling(top + k * height / 10.0), width, 1);
 
-        if (history.Count == 0) return;
+        if (beats is null || history.Count == 0) return;
         var latest = history.LatestTime;
-        for (var i = history.FirstVisible; i < history.Count; i++)
+        var edge = latest - History.Window100Ns;
+        for (var i = beats.Count - 1; i >= 0; i--)
         {
-            if (history.SequenceAt(i) % gridSamples != 0) continue;
-            var x = right - (latest - history.TimeAt(i)) / (double)History.Window100Ns * (right - left);
-            g.FillRectangle(brush, (int)Math.Round(x, MidpointRounding.AwayFromZero), top, 1, height + 1);
+            var time = beats.TimeAt(i);
+            if (time < edge) break;
+            // A beat after the newest point is a sample this device missed.
+            if (time > latest || beats.NumberAt(i) % gridSamples != 0) continue;
+            g.FillRectangle(brush, XAt(time, latest, left, right), top, 1, height + 1);
         }
     }
+
+    /// <summary>
+    /// The x of <paramref name="time"/> on a graph whose newest point, at <paramref name="latest"/>, is on <paramref name="right"/>,
+    /// rounded to a whole pixel. Points and grid lines both take theirs from here, so a line on a point's time sits on it.
+    /// </summary>
+    static int XAt(long time, long latest, int left, int right) =>
+        (int)Math.Round(right - (latest - time) / (double)History.Window100Ns * (right - left), MidpointRounding.AwayFromZero);
 
     void DrawBorder(Graphics g, int left, int right, int top, int bottom)
     {

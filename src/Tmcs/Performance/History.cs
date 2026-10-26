@@ -15,7 +15,6 @@ internal sealed class History
     readonly long[] _times = new long[Capacity];
     readonly float[] _values;
     int _head;      // ring slot of the oldest point
-    long _added;    // points ever accepted
 
     public History(int seriesCount)
     {
@@ -47,8 +46,8 @@ internal sealed class History
 
     /// <summary>
     /// Adds a point after the newest. When the ring is full, the oldest point goes only if the one after it is at or before
-    /// the window's left edge, so the line still enters at the left border. Otherwise the new point replaces the newest,
-    /// which keeps its sequence: quick refreshes never push the left of the graph out.
+    /// the window's left edge, so the line still enters at the left border. Otherwise the new point replaces the newest:
+    /// quick refreshes never push the left of the graph out.
     /// </summary>
     public void Add(long time100Ns, ReadOnlySpan<float> values)
     {
@@ -57,8 +56,8 @@ internal sealed class History
         if (Count > 0 && time100Ns <= LatestTime) return;
 
         int slot;
-        if (Count < Capacity) { slot = Slot(Count++); _added++; }
-        else if (TimeAt(1) <= time100Ns - Window100Ns) { slot = _head; _head = (_head + 1) % Capacity; _added++; }
+        if (Count < Capacity) slot = Slot(Count++);
+        else if (TimeAt(1) <= time100Ns - Window100Ns) { slot = _head; _head = (_head + 1) % Capacity; }
         else slot = Slot(Count - 1);
 
         _times[slot] = time100Ns;
@@ -69,9 +68,6 @@ internal sealed class History
     public long TimeAt(int index) => _times[Slot(index)];
 
     public float ValueAt(int series, int index) => _values[series * Capacity + Slot(index)];
-
-    /// <summary>How many points were added before this one. Grid lines sit on every n-th point by this number, so they scroll with the data.</summary>
-    public long SequenceAt(int index) => _added - Count + index;
 
     /// <summary>The largest value from <see cref="FirstVisible"/> on; 0 when empty.</summary>
     public float MaxVisible(int series)

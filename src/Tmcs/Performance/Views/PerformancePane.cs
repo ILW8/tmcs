@@ -51,6 +51,10 @@ internal abstract class PerformancePane : ScrollableControl
         }
     }
 
+    /// <summary>The samples the graphs' vertical grid lines sit on, set by the view. Without them, graphs have only grid rows.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public GridBeats? Beats { get; set; }
+
     /// <summary>The height the content needs, in 96-DPI units. Above the pane's height, the pane scrolls.</summary>
     public virtual int ContentHeight => 0;
 

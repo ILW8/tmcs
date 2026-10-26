@@ -15,8 +15,7 @@ public class HistoryTests
     [Fact] public void Add_keeps_order_and_caps_at_capacity()
     { var h = Filled(130, 5_000_000);
       Assert.Equal(History.Capacity, h.Count); Assert.Equal(10 * 5_000_000L, h.TimeAt(0));
-      Assert.Equal(130 * 5_000_000L, h.LatestTime); Assert.Equal(130f, h.ValueAt(0, h.Count - 1));
-      Assert.Equal(9, h.SequenceAt(0)); Assert.Equal(129, h.SequenceAt(h.Count - 1)); }
+      Assert.Equal(130 * 5_000_000L, h.LatestTime); Assert.Equal(130f, h.ValueAt(0, h.Count - 1)); }
 
     [Fact] public void First_visible_is_the_newest_point_at_or_before_59_s_ago()
     { var h = Filled(100, 10_000_000); // one point a second, 100 s
@@ -31,8 +30,7 @@ public class HistoryTests
       Assert.Equal(History.Capacity, h.Count);
       Assert.True(h.TimeAt(h.FirstVisible) <= h.LatestTime - History.Window100Ns, "the line no longer reaches the left border");
       Assert.Equal(121 * 10_000_000L + 100 * 10_000, h.LatestTime); Assert.Equal(100f, h.ValueAt(0, h.Count - 1));
-      Assert.Equal(60f, h.ValueAt(0, h.Count - 2)); Assert.Equal(121f, h.ValueAt(0, h.Count - 62)); // 60 presses kept, then 121 s
-      Assert.Equal(181, h.SequenceAt(h.Count - 1)); } // 121 + 61 appended: a replaced point keeps its sequence
+      Assert.Equal(60f, h.ValueAt(0, h.Count - 2)); Assert.Equal(121f, h.ValueAt(0, h.Count - 62)); } // 60 presses kept, then 121 s
 
     [Fact] public void First_visible_is_0_when_history_is_shorter_than_the_window()
     { Assert.Equal(0, Filled(10, 10_000_000).FirstVisible); }

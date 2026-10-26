@@ -87,16 +87,16 @@ internal sealed class GpuPane : PerformancePane
             var percent = PerfFormat.Percent(EngineValue(counters, i));
             var right = graph.Right + f.Scale(2);
             PaneText.Draw(g, percent, f.Caption, new Point(right - PaneText.Width(percent, f.Caption), labelY + f.Scale(2)), PaneText.Gray);
-            _painter.Paint(g, graph, history, 1 + i, 100, EngineGridSamples);
+            _painter.Paint(g, graph, history, 1 + i, 100, EngineGridSamples, Beats);
         }
 
         var info = gpu.Info;
         var dedicated = MemoryGraph(DedicatedY);
         Captions(g, dedicated, "Dedicated GPU memory usage", PerfFormat.Size(info.DedicatedTotal), bottom: false);
-        _painter.Paint(g, dedicated, history, 5, info.DedicatedTotal, MemoryGridSamples);
+        _painter.Paint(g, dedicated, history, 5, info.DedicatedTotal, MemoryGridSamples, Beats);
         var shared = MemoryGraph(SharedY);
         Captions(g, shared, "Shared GPU memory usage", PerfFormat.Size(info.SharedTotal), bottom: false);
-        _painter.Paint(g, shared, history, 6, info.SharedTotal, MemoryGridSamples);
+        _painter.Paint(g, shared, history, 6, info.SharedTotal, MemoryGridSamples, Beats);
 
         PaintInfo(g, BuildInfo(gpu), Color.Empty, Color.Empty); // no item has a legend marker
     }

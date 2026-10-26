@@ -60,7 +60,7 @@ internal sealed class CpuPane : PerformancePane
         var shape = Shape(processors);
         var history = cpu.History;
         for (var i = 0; i < processors; i++)
-            _painter.Paint(g, Cell(grid, shape, i), history, 1 + 2 * i, 100, GridSamples, second: 2 + 2 * i);
+            _painter.Paint(g, Cell(grid, shape, i), history, 1 + 2 * i, 100, GridSamples, Beats, second: 2 + 2 * i);
 
         PaintInfo(g, info, Color.Empty, Color.Empty); // no item has a legend marker
     }

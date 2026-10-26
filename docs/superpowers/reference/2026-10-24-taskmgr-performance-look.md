@@ -140,6 +140,7 @@ How these were identified:
 - **Samples:** 60 points span the graph from border to border, `dx = (right−left)/59`, with the newest at `right`. In capture 10 the line's vertices sit exactly at these x positions.
 - **Vertical grid lines:** they sit on sample positions, one every `s` samples: `x = round(right − (p + s·j)·dx)` for j = 0, 1, 2, …
   - `p` (0..s−1) is the scroll phase.
+  - **tmcs differs on purpose (owner's request, 2026-10-26):** the lines sit on every `s`-th *timer* sample, so they stay `s` intervals apart in time. A refresh (F5) between ticks starts no line. While paused, a refresh counts once a sampling interval has passed since the last counted sample. At a steady speed this is every `s`-th sample, as above.
   - In capture 10 the vertices at x=1158 and 1210 lie on grid lines.
 
 | Pane | Graph | Rect | dx | s | Column spacing | Row spacing | Phase p in capture |

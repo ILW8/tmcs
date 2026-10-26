@@ -42,6 +42,9 @@ internal sealed class PerformanceModel : IDisposable
     public CpuDevice Cpu { get; }
     public MemoryDevice Memory { get; }
 
+    /// <summary>The samples every graph's vertical grid lines sit on. The form notes each sample here before <see cref="Sample"/>.</summary>
+    public GridBeats Beats { get; } = new();
+
     /// <summary>
     /// In sidebar order: CPU, Memory, the disks, the adapters, then the GPUs, each kind in its source's order. Hidden adapters are
     /// here and sampled like the others, so showing them shows real graphs; only the sidebar leaves them out.

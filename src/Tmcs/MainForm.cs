@@ -412,6 +412,7 @@ internal class MainForm : Form, IScenarioTarget
 
         var t = Stopwatch.GetElapsedTime(_startTimestamp).Ticks; // TimeSpan ticks are 100 ns
         _table.Apply(_snapshot, t);
+        _performance.Beats.Note(t, _clock.Timed, _clock.Interval100Ns);
         _performance.Sample(t, _snapshot);
         RefreshShowingView();
     }

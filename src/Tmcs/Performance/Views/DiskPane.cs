@@ -61,12 +61,12 @@ internal sealed class DiskPane : PerformancePane
 
         var active = Active(info);
         Captions(g, active, "Active time", "100%", bottom: true);
-        _painter.Paint(g, active, history, 0, 100, 3);
+        _painter.Paint(g, active, history, 0, 100, 3, Beats);
 
         var transfer = Transfer(info);
         var scale = ScaleOf(disk);
         Captions(g, transfer, "Disk transfer rate", scale.Caption, bottom: true);
-        _painter.Paint(g, transfer, history, 1, scale.Max, 3, second: 2);
+        _painter.Paint(g, transfer, history, 1, scale.Max, 3, Beats, second: 2);
 
         PaintInfo(g, info, GraphPalettes.Disk.Line, GraphPalettes.Disk.SecondLine);
     }

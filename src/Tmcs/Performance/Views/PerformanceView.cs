@@ -43,6 +43,7 @@ internal sealed class PerformanceView : Control
                 DeviceKind.Gpu => new GpuPane(_fonts),
                 _ => new TitlePane(_fonts),
             };
+            _panes[i].Beats = model.Beats;
             _panes[i].Visible = false;
             Controls.Add(_panes[i]);
         }
