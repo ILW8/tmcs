@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Tmcs.Actions;
 using Tmcs.Details;
 using Tmcs.Icons;
 using Tmcs.Native;
@@ -7,6 +8,7 @@ using Tmcs.Performance;
 using Tmcs.Processes;
 using Tmcs.Sampling;
 using Tmcs.Settings;
+using Tmcs.Tests.Actions;
 using Tmcs.Ui;
 
 namespace Tmcs.Tests;
@@ -24,6 +26,7 @@ public sealed partial class MainFormTests : IDisposable
     private const nint DbtDevNodesChanged = 0x0007;
     private const nint DbtDeviceArrival = 0x8000;
     private const nint DbtDeviceRemoveComplete = 0x8004;
+    private const uint WmNotify = 0x004E;
 
     // The directory does not exist until a form saves, so a test can tell whether anything was written.
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "tmcs-tests-" + Guid.NewGuid().ToString("N"));
@@ -159,8 +162,8 @@ public sealed partial class MainFormTests : IDisposable
         var file = GetSubMenu(bar, 0);
         var options = GetSubMenu(bar, 1);
         var view = GetSubMenu(bar, 2);
-        Assert.Equal(["E&xit"], Texts(file));
-        Assert.Equal([CommandIds.Exit], Ids(file));
+        Assert.Equal(["Run &new task", "E&xit"], Texts(file));
+        Assert.Equal([CommandIds.RunNewTask, CommandIds.Exit], Ids(file));
         Assert.Equal(["&Always on top"], Texts(options));
         Assert.Equal([CommandIds.AlwaysOnTop], Ids(options));
         Assert.Equal(["&Refresh now", "&Update speed"], Texts(view));
@@ -594,6 +597,75 @@ public sealed partial class MainFormTests : IDisposable
         Assert.NotEqual(oldHandle, rig.Form.Handle);
         Assert.True(IsMenu(bar)); // detached before the old window was destroyed, so Windows did not destroy it
         Assert.Equal(bar, GetMenu(rig.Form.Handle));
+    });
+
+    [Fact]
+    public void Run_new_task_menu_item_is_in_the_file_menu() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+
+        var file = GetSubMenu(GetMenu(rig.Form.Handle), 0);
+
+        // Run new task first, then Exit, with no separator between them (reference 1.1).
+        Assert.Equal(["Run &new task", "E&xit"], Texts(file));
+        Assert.Equal([101, 100], Ids(file));
+    });
+
+    // The real dialog is never shown: the test replaces the seam the command calls.
+    [Fact]
+    public void Run_new_task_command_shows_the_dialog() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        var original = RunNewTask.ShowDialog;
+        var calls = new List<(nint Owner, nint Icon)>();
+        try
+        {
+            RunNewTask.ShowDialog = (owner, icon) => calls.Add((owner, icon));
+
+            rig.Form.Command(CommandIds.RunNewTask);
+        }
+        finally
+        {
+            RunNewTask.ShowDialog = original;
+        }
+
+        Assert.Equal([(rig.Form.Handle, rig.Form.Icon!.Handle)], calls);
+    });
+
+    // The launcher is replaced, so nothing is started.
+    [Fact]
+    public void Run_notify_is_answered_with_the_launch_result_and_other_notifies_go_to_base() => Sta.Run(() =>
+    {
+        using var rig = new Rig(SettingsPath);
+        rig.Form.ShowOffscreen();
+        var launched = new List<string>();
+
+        var handled = RunNewTaskTests.WithLauncher((c, _, _) =>
+        {
+            launched.Add(c);
+            return true;
+        }, () => RunNewTaskTests.WithPayload("calc", null, 0, p => (int)User32.SendMessage(rig.Form.Handle, WmNotify, 0, p)));
+        var kept = RunNewTaskTests.WithLauncher((_, _, _) => false,
+            () => RunNewTaskTests.WithPayload("calc", null, 0, p => (int)User32.SendMessage(rig.Form.Handle, WmNotify, 0, p)));
+
+        Assert.Equal(1, handled);
+        Assert.Equal(2, kept);
+        Assert.Equal(["calc"], launched);
+
+        // Any other code is the base's, which answers 0 for a sender that is not one of its controls.
+        var other = RunNewTaskTests.WithLauncher((c, _, _) =>
+        {
+            launched.Add(c);
+            return true;
+        }, () => RunNewTaskTests.WithPayload("calc", null, 0, p =>
+        {
+            Marshal.WriteInt32(p, 0x10, -510);
+            return (int)User32.SendMessage(rig.Form.Handle, WmNotify, 0, p);
+        }));
+        Assert.Equal(0, other);
+        Assert.Equal(["calc"], launched);
     });
 
     /// <summary>The check mark of the main menu item <paramref name="id"/>, as the menu would show it now.</summary>

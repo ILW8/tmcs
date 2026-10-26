@@ -1,14 +1,20 @@
 namespace Tmcs.Actions;
 
 /// <summary>
-/// tmcs's own copies of the text Task Manager shows for the Details actions (reference 3.1, 3.3 and 4). Each comment gives the MUI
-/// string id the text was read from; tmcs never loads it. <c>{0}</c> stands where Task Manager has <c>%s</c>: the process name as the
-/// Name column shows it.
+/// tmcs's own copies of the text Task Manager shows for Run new task and the Details actions (reference 2.1, 3.1, 3.3 and 4). Each
+/// comment gives the MUI string id the text was read from; tmcs never loads it. <c>{0}</c> stands where Task Manager has <c>%s</c>:
+/// the process name as the Name column shows it.
 /// </summary>
 internal static class ActionStrings
 {
     // 32420
     public const string TaskManager = "Task Manager";
+
+    // 37212, the Run dialog's caption.
+    public const string CreateNewTask = "Create new task";
+
+    // 37213, the Run dialog's prompt.
+    public const string CreateNewTaskPrompt = "Type the name of a program, folder, document, or Internet resource, and Windows will open it for you.";
 
     // 32421
     public const string EndTaskOne = "Do you want to end {0}?";

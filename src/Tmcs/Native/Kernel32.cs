@@ -213,4 +213,27 @@ internal static unsafe partial class Kernel32
     /// <returns>Chars written excluding the terminator, or 0 on failure.</returns>
     [LibraryImport("kernel32.dll", SetLastError = true)]
     public static partial uint GetSystemWindowsDirectoryW(char* buffer, uint size);
+
+    /// <summary><c>LOAD_LIBRARY_SEARCH_SYSTEM32</c>: <see cref="LoadLibraryExW"/> looks only in System32.</summary>
+    public const uint LoadLibrarySearchSystem32 = 0x800;
+
+    /// <param name="file">A DLL name, looked up as <paramref name="flags"/> say.</param>
+    /// <param name="reserved">Must be 0.</param>
+    /// <returns>The module, or 0 on failure. The caller must <see cref="FreeLibrary"/> it.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint LoadLibraryExW(string file, nint reserved, uint flags);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool FreeLibrary(nint module);
+
+    /// <param name="name">The export's name, zero-terminated ANSI.</param>
+    /// <returns>The export's address, or 0 when the module has no such export.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial nint GetProcAddress(nint module, byte* name);
+
+    /// <param name="wow64">True when the process is a 32-bit one running on 64-bit Windows.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWow64Process(nint process, [MarshalAs(UnmanagedType.Bool)] out bool wow64);
 }

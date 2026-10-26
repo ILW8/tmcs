@@ -157,6 +157,12 @@ internal static partial class User32
     /// <summary><c>SM_CXSMICON</c>: the recommended small icon width.</summary>
     public const int SmCxSmIcon = 49;
 
+    /// <summary><c>SM_CLEANBOOT</c>: how the system started. 0 is a normal boot; anything else is a Safe Mode.</summary>
+    public const int SmCleanBoot = 67;
+
+    /// <summary><c>WM_NOTIFY</c>: a control or a dialog tells its owner about an event. lParam starts with an <see cref="NmHdr"/>.</summary>
+    public const int WmNotify = 0x004E;
+
     /// <summary><c>SW_RESTORE</c>: un-minimizes a window. On a maximized window that is not minimized it un-maximizes it.</summary>
     public const int SwRestore = 9;
 
@@ -432,6 +438,10 @@ internal static partial class User32
     /// <returns>The metric scaled for <paramref name="dpi"/>, or 0 on failure.</returns>
     [LibraryImport("user32.dll")]
     public static partial int GetSystemMetricsForDpi(int index, uint dpi);
+
+    /// <returns>The metric, or 0 on failure.</returns>
+    [LibraryImport("user32.dll")]
+    public static partial int GetSystemMetrics(int index);
 
     /// <returns>A copy the caller must destroy with <see cref="DestroyIcon"/>, or 0 on failure.</returns>
     [LibraryImport("user32.dll", SetLastError = true)]

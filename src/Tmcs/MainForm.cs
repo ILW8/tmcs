@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Tmcs.Actions;
 using Tmcs.Details;
 using Tmcs.Devices;
 using Tmcs.Diagnostics;
@@ -255,6 +256,11 @@ internal class MainForm : Form, IScenarioTarget
             case WmCommand when m.LParam == 0 && HiWord(m.WParam) == 0:
                 if (OnCommand(LoWord(m.WParam))) return;
                 break;
+            // The Run dialog asks the window to start the command typed (reference 2.4). It sends this from its own thread, so the
+            // answer is given here, on the UI thread, while the dialog waits for it. Every other notification is the base's.
+            case User32.WmNotify when RunNewTask.IsRunNotify(m.LParam):
+                m.Result = RunNewTask.HandleRunNotify(m.LParam);
+                return;
             // Not for the window (system) menu.
             case WmInitMenuPopup when HiWord(m.LParam) == 0:
                 UpdateMenuChecks();
@@ -375,7 +381,7 @@ internal class MainForm : Form, IScenarioTarget
         var speed = NativeMenu.Popup(
             ("&High", CommandIds.SpeedHigh), ("&Normal", CommandIds.SpeedNormal), ("&Low", CommandIds.SpeedLow), ("&Paused", CommandIds.SpeedPaused));
         var bar = NativeMenu.Bar()
-            .AddPopup("&File", NativeMenu.Popup(("E&xit", CommandIds.Exit)))
+            .AddPopup("&File", NativeMenu.Popup(("Run &new task", CommandIds.RunNewTask), ("E&xit", CommandIds.Exit)))
             .AddPopup("&Options", NativeMenu.Popup(("&Always on top", CommandIds.AlwaysOnTop)))
             .AddPopup("&View", NativeMenu.Popup(("&Refresh now", CommandIds.RefreshNow)).AddPopup("&Update speed", speed));
         return (bar, speed);
@@ -437,6 +443,9 @@ internal class MainForm : Form, IScenarioTarget
     {
         switch (id)
         {
+            case CommandIds.RunNewTask:
+                RunNewTask.ShowDialog(Handle, Icon?.Handle ?? 0); // the window's own icon, as Task Manager passes its own
+                return true;
             case CommandIds.Exit:
                 Close();
                 return true;
