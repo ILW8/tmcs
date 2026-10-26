@@ -17,19 +17,12 @@ internal sealed class FakeProcessActions : IProcessActions
 
     public bool IsElevated { get; set; }
 
-    public HashSet<int> CriticalPids { get; } = [];
     public Dictionary<int, ActionOutcome> EndTaskOutcomes { get; } = new();
     public Dictionary<int, PrioritySet> PriorityOutcomes { get; } = new();
     public Dictionary<int, AffinityInfo> Affinities { get; } = new();
     public Dictionary<int, ActionOutcome> AffinityOutcomes { get; } = new();
 
     public List<(string Action, ProcessIdentity Id)> Calls { get; } = [];
-
-    public bool IsCritical(ProcessIdentity id)
-    {
-        Calls.Add((nameof(IsCritical), id));
-        return CriticalPids.Contains(id.Pid);
-    }
 
     public ActionOutcome EndTask(ProcessIdentity id)
     {

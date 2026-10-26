@@ -12,7 +12,9 @@ internal static unsafe partial class ComCtl32
     public static partial nint ImageList_Create(int cx, int cy, uint flags, int initial, int grow);
 
     /// <summary>The image list copies the icon, so the caller still owns <paramref name="icon"/>.</summary>
+    /// <param name="imageList">The image list.</param>
     /// <param name="index">The image to replace, or -1 to append one.</param>
+    /// <param name="icon">The icon to copy in.</param>
     /// <returns>The index of the image, or -1 on failure.</returns>
     [LibraryImport("comctl32.dll")]
     public static partial int ImageList_ReplaceIcon(nint imageList, int index, nint icon);
@@ -35,12 +37,6 @@ internal static unsafe partial class ComCtl32
 
     /// <summary><c>TDN_CREATED</c>: the dialog has been created and is about to be shown. wParam and lParam are unused.</summary>
     public const uint TdnCreated = 0;
-
-    /// <summary><c>TDN_VERIFICATION_CLICKED</c>: wParam is 1 when the verification box is now checked, else 0.</summary>
-    public const uint TdnVerificationClicked = 8;
-
-    /// <summary><c>TDM_ENABLE_BUTTON</c> (WM_USER + 111): wParam is the button id, lParam nonzero to enable it.</summary>
-    public const uint TdmEnableButton = 0x0400 + 111;
 
     /// <summary><c>TASKDIALOG_BUTTON</c>. commctrl.h packs the task dialog structs to 1 byte, so this is 12 bytes on x64.</summary>
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -87,15 +83,20 @@ internal static unsafe partial class ComCtl32
     }
 
     /// <summary>Shows a modal task dialog. Exists in comctl32 v6 only.</summary>
+    /// <param name="config">The dialog's <c>TASKDIALOGCONFIG</c>.</param>
     /// <param name="button">Receives the id of the button that closed the dialog.</param>
     /// <param name="radioButton">Receives the chosen radio button's id, or null.</param>
-    /// <param name="verificationChecked">Receives whether the verification box was checked (a BOOL), or null.</param>
+    /// <param name="verificationChecked">Receives whether the verification box was checked (a BOOL), or null, which disables the box.</param>
     /// <returns>An HRESULT.</returns>
     [LibraryImport("comctl32.dll")]
     public static partial int TaskDialogIndirect(in TaskDialogConfig config, out int button, int* radioButton, int* verificationChecked);
 
     /// <summary>Shows a modal task dialog with common buttons only. Exists in comctl32 v6 only.</summary>
+    /// <param name="owner">The window the dialog is modal to, or 0 for none.</param>
     /// <param name="instance">The module <paramref name="title"/> and the other strings are loaded from when they are resource ids; 0 for plain strings.</param>
+    /// <param name="title">The window title.</param>
+    /// <param name="mainInstruction">The bold main instruction.</param>
+    /// <param name="content">The text under it.</param>
     /// <param name="buttons"><c>TDCBF_*</c>.</param>
     /// <param name="icon">A <c>TD_*_ICON</c> value, or 0 for none.</param>
     /// <param name="button">Receives the id of the button that closed the dialog.</param>

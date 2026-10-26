@@ -96,7 +96,7 @@ internal sealed class DetailsView : UserControl, ICellSource
             using var menu = PrepareRowMenu(selection);
             return menu.Track(this, screen);
         };
-        Confirm = (kind, count, singleName, critical, criticalName) => ConfirmDialog.Show(DialogOwner, kind, count, singleName, critical, criticalName);
+        Confirm = (kind, count, singleName) => ConfirmDialog.Show(DialogOwner, kind, count, singleName);
         ChooseAffinity = (name, info) =>
         {
             using var dialog = new ProcessorAffinityDialog(name, info);
@@ -130,11 +130,11 @@ internal sealed class DetailsView : UserControl, ICellSource
     internal Func<IReadOnlyList<ProcessRow>, Point, int> TrackRowMenu { get; set; }
 
     /// <summary>
-    /// Asks before a command acts, given the kind, the row count, the one row's name, whether a critical process is among the rows,
-    /// and that process's name. True goes ahead. Tests replace it so no dialog opens.
+    /// Asks before a command acts, given the kind, the row count and the one row's name. True goes ahead. Tests replace it so no
+    /// dialog opens.
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    internal Func<ConfirmKind, int, string?, bool, string?, bool> Confirm { get; set; }
+    internal Func<ConfirmKind, int, string?, bool> Confirm { get; set; }
 
     /// <summary>
     /// Shows the Processor affinity dialog for the process with this name, seeded with these masks, and returns the chosen mask, or
@@ -559,15 +559,7 @@ internal sealed class DetailsView : UserControl, ICellSource
         if (selection.Count == 0) return;
 
         // End process tree asks about the selected roots only, not their descendants.
-        string? criticalName = null;
-        foreach (var row in selection)
-        {
-            if (!_actions.IsCritical(row.Id)) continue;
-            criticalName = row.Name;
-            break;
-        }
-
-        if (!Confirm(kind, selection.Count, selection.Count == 1 ? selection[0].Name : null, criticalName is not null, criticalName)) return;
+        if (!Confirm(kind, selection.Count, selection.Count == 1 ? selection[0].Name : null)) return;
 
         ActionOutcome? failure = null;
         foreach (var row in selection)
@@ -592,8 +584,7 @@ internal sealed class DetailsView : UserControl, ICellSource
         if (selection.Count != 1) return;
         var row = selection[0];
 
-        // Changing a class does not end the process, so a critical process gets the ordinary dialog.
-        if (!Confirm(ConfirmKind.SetPriority, 1, row.Name, false, null)) return;
+        if (!Confirm(ConfirmKind.SetPriority, 1, row.Name)) return;
 
         var (outcome, readBackMatched) = _actions.SetPriority(row.Id, priority);
         if (outcome.IsGone) return;

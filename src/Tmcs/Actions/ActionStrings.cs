@@ -46,18 +46,6 @@ internal static class ActionStrings
     // 32430
     public const string EndTreeSeveralContent = "If open programs or processes are associated with the selected process trees, they will close and you will lose any unsaved data. If you end a system process, it might result in system instability. Are you sure you want to continue?";
 
-    // 32443
-    public const string EndCritical = "Do you want to end the system process '{0}'?";
-
-    // 32444. "any data hasn't been saved" is Task Manager's own slip, kept as is.
-    public const string EndCriticalContent = "Ending this process will cause Windows to become unusable or shut down, causing you to lose any data hasn't been saved. Are you sure you want to continue?";
-
-    // 32445
-    public const string ShutDown = "Shut down";
-
-    // 32446
-    public const string AbandonAndShutDown = "Abandon unsaved data and shut down.";
-
     // 32447
     public const string ChangePriorityOne = "Do you want to change the priority of '{0}'?";
 

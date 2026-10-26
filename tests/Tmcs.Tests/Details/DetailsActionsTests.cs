@@ -161,7 +161,7 @@ public partial class DetailsActionsTests
         RightClick(rig.List, rig.List.PointToScreen(new Point(20, 40)));
 
         Assert.Equal([1, 3], rig.View.SelectedIdentities().Select(i => i.Pid).Order());
-        Assert.Equal([(ConfirmKind.EndTask, 1, "alpha.exe", false, null)], rig.Confirms);
+        Assert.Equal([(ConfirmKind.EndTask, 1, "alpha.exe")], rig.Confirms);
         Assert.Equal([rig.Row(2).Id], rig.Ended);
         Assert.Empty(rig.Errors);
     });
@@ -187,7 +187,7 @@ public partial class DetailsActionsTests
 
         rig.View.OnRowCommand(CommandIds.EndTask, [rig.Row(2), rig.Row(1)]);
 
-        Assert.Equal([(ConfirmKind.EndTask, 2, null, false, null)], rig.Confirms);
+        Assert.Equal([(ConfirmKind.EndTask, 2, null)], rig.Confirms);
         Assert.Equal([rig.Row(2).Id, rig.Row(1).Id], rig.Ended);
 
         // End process tree: one call per selected root, each given the table's live rows to find its descendants in. The roots are
@@ -199,9 +199,9 @@ public partial class DetailsActionsTests
 
         rig.View.OnRowCommand(CommandIds.EndProcessTree, [rig.Row(2), rig.Row(3)]);
 
-        Assert.Equal([(ConfirmKind.EndProcessTree, 2, null, false, null)], rig.Confirms);
+        Assert.Equal([(ConfirmKind.EndProcessTree, 2, null)], rig.Confirms);
         Assert.Equal(
-            [("IsCritical", rig.Row(2).Id), ("IsCritical", rig.Row(3).Id), ("EndProcessTree", rig.Row(2).Id), ("EndTask", rig.Row(4).Id), ("EndTask", rig.Row(2).Id),
+            [("EndProcessTree", rig.Row(2).Id), ("EndTask", rig.Row(4).Id), ("EndTask", rig.Row(2).Id),
                 ("EndProcessTree", rig.Row(3).Id), ("EndTask", rig.Row(3).Id)],
             rig.Actions.Calls);
 
@@ -237,28 +237,6 @@ public partial class DetailsActionsTests
     });
 
     [Fact]
-    public void A_critical_process_in_the_selection_uses_the_critical_dialog() => Sta.Run(() =>
-    {
-        using var rig = new Rig();
-        rig.Actions.CriticalPids.UnionWith([3, 1]);
-
-        rig.View.OnRowCommand(CommandIds.EndTask, [rig.Row(2), rig.Row(3), rig.Row(1)]);
-        rig.View.OnRowCommand(CommandIds.EndTask, [rig.Row(1)]);
-
-        Assert.Equal([(ConfirmKind.EndTask, 3, null, true, "mid.exe"), (ConfirmKind.EndTask, 1, "zeta.exe", true, "zeta.exe")], rig.Confirms);
-
-        // End process tree asks about the selected roots only: a critical descendant does not change the dialog.
-        rig.Confirms.Clear();
-        rig.Snapshot.Add(new RawProcess(4, 2, 500, "child.exe", 0, 0, 0, 0, 1, 1, 1, 8, false));
-        rig.Table.Apply(rig.Snapshot, 20_000_000);
-        rig.Actions.CriticalPids.Add(4);
-
-        rig.View.OnRowCommand(CommandIds.EndProcessTree, [rig.Row(2)]);
-
-        Assert.Equal([(ConfirmKind.EndProcessTree, 1, "alpha.exe", false, null)], rig.Confirms);
-    });
-
-    [Fact]
     public void Delete_ends_the_selection() => Sta.Run(() =>
     {
         using var rig = new Rig();
@@ -268,7 +246,7 @@ public partial class DetailsActionsTests
         var message = Message.Create(rig.List.Handle, (int)WmKeyDown, VkDelete, 0);
         Assert.True(rig.List.PreProcessMessage(ref message));
 
-        Assert.Equal([(ConfirmKind.EndTask, 2, null, false, null)], rig.Confirms);
+        Assert.Equal([(ConfirmKind.EndTask, 2, null)], rig.Confirms);
         Assert.Equal([rig.Row(2).Id, rig.Row(3).Id], rig.Ended);
         Assert.Empty(rig.Menus);
 
@@ -318,7 +296,7 @@ public partial class DetailsActionsTests
 
         rig.View.EndTaskButton.PerformClick();
 
-        Assert.Equal([(ConfirmKind.EndTask, 2, null, false, null)], rig.Confirms);
+        Assert.Equal([(ConfirmKind.EndTask, 2, null)], rig.Confirms);
         Assert.Equal([rig.Row(2).Id, rig.Row(3).Id], rig.Ended);
         Assert.Empty(rig.Errors);
         Assert.Empty(rig.Menus);
@@ -386,11 +364,10 @@ public partial class DetailsActionsTests
     public void Priority_confirm_then_set() => Sta.Run(() =>
     {
         using var rig = new Rig();
-        rig.Actions.CriticalPids.Add(2); // the critical shutdown dialog is for ending only
 
         rig.View.OnRowCommand(CommandIds.PriorityAboveNormal, [rig.Row(2)]);
 
-        Assert.Equal([(ConfirmKind.SetPriority, 1, "alpha.exe", false, null)], rig.Confirms);
+        Assert.Equal([(ConfirmKind.SetPriority, 1, "alpha.exe")], rig.Confirms);
         Assert.Equal([(rig.Row(2).Id, ProcessPriority.AboveNormal)], rig.Actions.PrioritySets);
         Assert.Empty(rig.Ended);
         Assert.Empty(rig.Errors);
@@ -639,7 +616,7 @@ public partial class DetailsActionsTests
         public readonly FakeProcessActions Actions = new();
         public readonly DetailsView View;
         public readonly List<(IReadOnlyList<ProcessRow> Selection, Point Screen)> Menus = [];
-        public readonly List<(ConfirmKind Kind, int Count, string? SingleName, bool Critical, string? CriticalName)> Confirms = [];
+        public readonly List<(ConfirmKind Kind, int Count, string? SingleName)> Confirms = [];
         public readonly List<(ErrorKind Kind, ActionOutcome Outcome, bool IsElevated)> Errors = [];
         public readonly List<(string Title, string Body)> Notices = [];
         public readonly List<string> Opened = [];
@@ -671,9 +648,9 @@ public partial class DetailsActionsTests
                 Menus.Add((selection, screen));
                 return TrackRowMenu(selection, screen);
             };
-            View.Confirm = (kind, count, singleName, critical, criticalName) =>
+            View.Confirm = (kind, count, singleName) =>
             {
-                Confirms.Add((kind, count, singleName, critical, criticalName));
+                Confirms.Add((kind, count, singleName));
                 return ConfirmAnswer;
             };
             View.ChooseAffinity = (name, affinity) =>

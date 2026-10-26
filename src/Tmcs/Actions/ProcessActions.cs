@@ -36,14 +36,6 @@ internal sealed unsafe class ProcessActions : IProcessActions
 
     public bool IsElevated => _elevated.Value;
 
-    public bool IsCritical(ProcessIdentity id)
-    {
-        // Some systems want the full query right for this class, so a denied open or query is tried once more with it.
-        return ReadBreakOnTermination(id, Kernel32.ProcessQueryLimitedInformation)
-               ?? ReadBreakOnTermination(id, Kernel32.ProcessQueryInformation)
-               ?? false;
-    }
-
     public ActionOutcome EndTask(ProcessIdentity id)
     {
         // Task Manager refuses the idle process, System and the other kernel-made PIDs before opening anything (reference 3.2 step 1).
@@ -168,26 +160,6 @@ internal sealed unsafe class ProcessActions : IProcessActions
         finally
         {
             Kernel32.CloseHandle(token);
-        }
-    }
-
-    /// <returns>The flag, or null when the open or the query was denied with <paramref name="access"/>.</returns>
-    static bool? ReadBreakOnTermination(ProcessIdentity id, uint access)
-    {
-        var process = Kernel32.OpenProcess(access, false, id.Pid);
-        if (process == 0) return Marshal.GetLastPInvokeError() == Kernel32.ErrorAccessDenied ? null : false;
-        try
-        {
-            if (!IsSameProcess(process, id)) return false;
-
-            uint flag = 0;
-            var status = NtDll.NtQueryInformationProcess(process, NtDll.ProcessBreakOnTermination, &flag, sizeof(uint), out _);
-            if (status == NtDll.StatusAccessDenied) return null;
-            return status >= 0 && flag != 0;
-        }
-        finally
-        {
-            Kernel32.CloseHandle(process);
         }
     }
 

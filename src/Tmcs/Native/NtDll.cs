@@ -48,9 +48,6 @@ internal static unsafe partial class NtDll
     [LibraryImport("ntdll.dll")]
     public static partial int NtQueryInformationProcess(nint process, int infoClass, void* buffer, uint length, out uint returnLength);
 
-    /// <summary><c>ProcessBreakOnTermination</c>: a ULONG, non-zero when the process is critical (ending it stops Windows).</summary>
-    public const int ProcessBreakOnTermination = 29;
-
     /// <summary><c>ProcessHandleInformation</c>: a <see cref="ProcessHandleSnapshotHead"/> followed by its <see cref="ProcessHandleTableEntry"/> records.</summary>
     public const int ProcessHandleInformation = 51;
 

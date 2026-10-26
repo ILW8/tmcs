@@ -163,19 +163,6 @@ public class ProcessActionsTests
     }
 
     [Fact]
-    public void Critical_process_is_detected()
-    {
-        var fake = new FakeProcessActions { CriticalPids = { 1234 } };
-        Assert.True(fake.IsCritical(new(1234, 1)));
-        Assert.False(fake.IsCritical(new(5678, 1)));
-
-        // The real query on an ordinary process the test started: readable, not critical, no throw.
-        var child = Start();
-        try { Assert.False(new ProcessActions().IsCritical(IdOf(child))); }
-        finally { Kill(child); }
-    }
-
-    [Fact]
     public void Set_priority_changes_the_class()
     {
         var child = Start();

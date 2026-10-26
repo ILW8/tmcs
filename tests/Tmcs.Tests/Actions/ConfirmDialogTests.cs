@@ -11,7 +11,6 @@ namespace Tmcs.Tests.Actions;
 public unsafe class ConfirmDialogTests
 {
     const int IDCANCEL = 2;
-    const uint TDM_CLICK_VERIFICATION = 0x0400 + 113; // WM_USER + 113: wParam checks (1) or clears (0) the box
 
     sealed record Config(
         uint Size, uint Flags, uint CommonButtons, string? Title, nint MainIcon, string? Main, string? Content,
@@ -19,8 +18,8 @@ public unsafe class ConfirmDialogTests
 
     static string? Text(char* s) => s == null ? null : new string(s);
 
-    static Config Read(ConfirmKind kind, int count, string? name, bool critical = false, string? criticalName = null) =>
-        ConfirmDialog.Build(0, kind, count, name, critical, criticalName, null, (in ComCtl32.TaskDialogConfig c) => new Config(
+    static Config Read(ConfirmKind kind, int count, string? name) =>
+        ConfirmDialog.Build(0, kind, count, name, null, (in c) => new Config(
             c.CbSize, c.Flags, c.CommonButtons, Text(c.WindowTitle), c.MainIcon, Text(c.MainInstruction), Text(c.Content),
             c.ButtonCount, c.Buttons[0].Id, Text(c.Buttons[0].Text), c.DefaultButton, Text(c.VerificationText), c.Callback != null));
 
@@ -107,89 +106,28 @@ public unsafe class ConfirmDialogTests
     }
 
     [Fact]
-    public void Critical_uses_the_shutdown_text_and_a_verification_box()
-    {
-        foreach (var kind in new[] { ConfirmKind.EndTask, ConfirmKind.EndProcessTree })
-        {
-            var c = Read(kind, 1, "notepad.exe", critical: true, criticalName: "csrss.exe");
-            AssertCommon(c);
-            Assert.Equal("Do you want to end the system process 'csrss.exe'?", c.Main);
-            Assert.Equal(string.Format(ActionStrings.EndCritical, "csrss.exe"), c.Main);
-            // Task Manager's grammar slip ("any data hasn't been saved") is kept.
-            Assert.Equal("Ending this process will cause Windows to become unusable or shut down, causing you to lose any data hasn't been saved. Are you sure you want to continue?", c.Content);
-            Assert.Equal(ActionStrings.EndCriticalContent, c.Content);
-            Assert.Equal(ActionStrings.ShutDown, c.ButtonText);
-            Assert.Equal("Abandon unsaved data and shut down.", c.Verification);
-            Assert.Equal(ActionStrings.AbandonAndShutDown, c.Verification);
-            Assert.True(c.HasCallback);
-        }
-    }
-
-    [Fact]
     public void Confirm_returns_true_only_for_the_custom_button()
     {
-        bool custom = false, cancel = true, criticalCustom = false, criticalCancel = true;
+        bool custom = false, cancel = true;
         var fired = false;
         HiddenDesktop.Run(() =>
         {
             using var driver = new TaskDialogDriver(pressOnActivate: false);
-            bool Show(int button, bool critical = false)
+            bool Show(int button)
             {
-                var confirmed = ConfirmDialog.Show(0, ConfirmKind.EndTask, 1, "notepad.exe", critical, critical ? "csrss.exe" : null,
-                    dialog => driver.Created(dialog, button));
+                var confirmed = ConfirmDialog.Show(0, ConfirmKind.EndTask, 1, "notepad.exe", dialog => driver.Created(dialog, button));
                 driver.Closed();
                 return confirmed;
             }
 
             custom = Show(ConfirmDialog.CustomButtonId);
             cancel = Show(IDCANCEL);
-            // TDM_CLICK_BUTTON presses Shut down even while it is disabled, so the critical dialog's result is read the same way.
-            criticalCustom = Show(ConfirmDialog.CustomButtonId, critical: true);
-            criticalCancel = Show(IDCANCEL, critical: true);
             fired = driver.WatchdogFired;
         });
 
         Assert.False(fired, "a dialog ignored its button press");
         Assert.True(custom);
         Assert.False(cancel);
-        Assert.True(criticalCustom);
-        Assert.False(criticalCancel);
-    }
-
-    [Fact]
-    public void Critical_button_is_enabled_only_while_the_box_is_checked()
-    {
-        var found = false;
-        bool atStart = true, whenChecked = false, whenUnchecked = true, confirmed = true;
-        var fired = false;
-        HiddenDesktop.Run(() =>
-        {
-            using var driver = new TaskDialogDriver(pressOnActivate: false);
-            // TDM_CLICK_VERIFICATION toggles the box as a click does, and only while the box is enabled: comctl32 disables it when
-            // TaskDialogIndirect gets no pfVerificationFlagChecked. So this goes through Show, as the owner's click would.
-            void Verification(nint dialog, bool isChecked) => User32.SendMessage(dialog, TDM_CLICK_VERIFICATION, isChecked ? 1 : 0, 0);
-
-            confirmed = ConfirmDialog.Show(0, ConfirmKind.EndTask, 1, null, true, "csrss.exe", dialog =>
-            {
-                var button = TaskDialogDriver.FindDescendant(dialog, "Button", ActionStrings.ShutDown);
-                found = button != 0;
-                atStart = TaskDialogDriver.IsWindowEnabled(button);
-                Verification(dialog, true);
-                whenChecked = TaskDialogDriver.IsWindowEnabled(button);
-                Verification(dialog, false);
-                whenUnchecked = TaskDialogDriver.IsWindowEnabled(button);
-                driver.Created(dialog, IDCANCEL);
-            });
-            driver.Closed();
-            fired = driver.WatchdogFired;
-        });
-
-        Assert.False(fired, "the dialog ignored Cancel");
-        Assert.True(found, "no Shut down button");
-        Assert.False(atStart);
-        Assert.True(whenChecked);
-        Assert.False(whenUnchecked);
-        Assert.False(confirmed);
     }
 
     [Fact]
@@ -202,10 +140,8 @@ public unsafe class ConfirmDialogTests
             using var driver = new TaskDialogDriver(pressOnActivate: false);
             for (var i = 0; i < 1000; i++)
             {
-                // Alternate the plain and the critical dialog, so the callback's path is counted too.
-                var critical = i % 2 == 1;
-                var confirmed = ConfirmDialog.Show(0, ConfirmKind.EndProcessTree, 1, "cmd.exe", critical, critical ? "csrss.exe" : null,
-                    dialog => driver.Created(dialog, IDCANCEL));
+                // The hook keeps the callback's path in the count.
+                var confirmed = ConfirmDialog.Show(0, ConfirmKind.EndProcessTree, 1, "cmd.exe", dialog => driver.Created(dialog, IDCANCEL));
                 driver.Closed();
                 Assert.False(confirmed);
                 if (i == 0) first = TaskDialogDriver.Counts();

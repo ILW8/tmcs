@@ -647,7 +647,7 @@ public partial class DetailsViewTests
             View.TrackHeaderMenu = (_, _) => throw new InvalidOperationException("the test would have shown the header menu");
             View.ChooseColumns = _ => throw new InvalidOperationException("the test would have shown the dialog");
             View.TrackRowMenu = (_, _) => throw new InvalidOperationException("the test would have shown the row menu");
-            View.Confirm = (_, _, _, _, _) => throw new InvalidOperationException("the test would have shown the confirmation");
+            View.Confirm = (_, _, _) => throw new InvalidOperationException("the test would have shown the confirmation");
             View.ChooseAffinity = (_, _) => throw new InvalidOperationException("the test would have shown the affinity dialog");
             View.ShowError = (_, _, _) => throw new InvalidOperationException("the test would have shown the error dialog");
             View.ShowNotice = (_, _) => throw new InvalidOperationException("the test would have shown a notice");

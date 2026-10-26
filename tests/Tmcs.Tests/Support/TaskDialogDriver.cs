@@ -101,30 +101,10 @@ internal sealed unsafe partial class TaskDialogDriver : IDisposable
         return CallNextHookEx(0, code, wParam, lParam);
     }
 
-    /// <summary>The first window under <paramref name="parent"/>, at any depth, with this class and text; 0 when there is none.</summary>
-    public static nint FindDescendant(nint parent, string className, string text)
-    {
-        nint found = 0;
-        EnumChildWindows(parent, (child, _) =>
-        {
-            if (ClassName(child) != className || WindowText(child) != text) return true;
-            found = child;
-            return false;
-        }, 0);
-        return found;
-    }
-
     static string ClassName(nint hwnd)
     {
         var buffer = stackalloc char[64];
         var length = GetClassNameW(hwnd, buffer, 64);
-        return new string(buffer, 0, length);
-    }
-
-    static string WindowText(nint hwnd)
-    {
-        var buffer = stackalloc char[256];
-        var length = GetWindowTextW(hwnd, buffer, 256);
         return new string(buffer, 0, length);
     }
 
@@ -146,8 +126,6 @@ internal sealed unsafe partial class TaskDialogDriver : IDisposable
         Assert.True(now.User - baseline.User <= 5, $"USER objects grew from {baseline.User} to {now.User}");
         Assert.True(now.Handles - baseline.Handles <= 5, $"handles grew from {baseline.Handles} to {now.Handles}");
     }
-
-    delegate bool EnumChildProc(nint hwnd, nint lParam);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     private static partial nint SetWindowsHookExW(int hookId, delegate* unmanaged<int, nint, nint, nint> proc, nint module, uint threadId);
@@ -171,16 +149,5 @@ internal sealed unsafe partial class TaskDialogDriver : IDisposable
     private static partial bool DestroyWindow(nint hWnd);
 
     [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool IsWindowEnabled(nint hWnd);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool EnumChildWindows(nint parent, EnumChildProc callback, nint lParam);
-
-    [LibraryImport("user32.dll")]
     private static partial int GetClassNameW(nint hwnd, char* name, int capacity);
-
-    [LibraryImport("user32.dll")]
-    private static partial int GetWindowTextW(nint hwnd, char* text, int capacity);
 }

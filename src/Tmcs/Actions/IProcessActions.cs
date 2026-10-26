@@ -11,9 +11,6 @@ internal interface IProcessActions
     /// <summary>Whether tmcs itself runs elevated (<c>TokenElevation</c>), read once.</summary>
     bool IsElevated { get; }
 
-    /// <summary>Whether the process has its break-on-termination flag set, so ending it stops Windows. False when it can't be read.</summary>
-    bool IsCritical(ProcessIdentity id);
-
     /// <summary>Ends the process with exit code 1 (reference 3.2, the Details-row path with no window pre-pass).</summary>
     ActionOutcome EndTask(ProcessIdentity id);
 

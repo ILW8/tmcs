@@ -106,7 +106,7 @@ internal sealed partial class OffscreenMainForm : MainForm
         view.TrackHeaderMenu = (_, _) => throw new InvalidOperationException("the test would have shown the header menu");
         view.ChooseColumns = _ => throw new InvalidOperationException("the test would have shown the Select columns dialog");
         view.TrackRowMenu = (_, _) => throw new InvalidOperationException("the test would have shown the row menu");
-        view.Confirm = (_, _, _, _, _) => throw new InvalidOperationException("the test would have shown the confirmation");
+        view.Confirm = (_, _, _) => throw new InvalidOperationException("the test would have shown the confirmation");
         view.ChooseAffinity = (_, _) => throw new InvalidOperationException("the test would have shown the affinity dialog");
         view.ShowError = (_, _, _) => throw new InvalidOperationException("the test would have shown the error dialog");
         view.ShowNotice = (_, _) => throw new InvalidOperationException("the test would have shown a notice");
