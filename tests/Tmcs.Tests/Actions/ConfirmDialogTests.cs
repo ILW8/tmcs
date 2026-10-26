@@ -11,6 +11,7 @@ namespace Tmcs.Tests.Actions;
 public unsafe class ConfirmDialogTests
 {
     const int IDCANCEL = 2;
+    const uint TDM_CLICK_VERIFICATION = 0x0400 + 113; // WM_USER + 113: wParam checks (1) or clears (0) the box
 
     sealed record Config(
         uint Size, uint Flags, uint CommonButtons, string? Title, nint MainIcon, string? Main, string? Content,
@@ -164,14 +165,11 @@ public unsafe class ConfirmDialogTests
         HiddenDesktop.Run(() =>
         {
             using var driver = new TaskDialogDriver(pressOnActivate: false);
-            // comctl32 sends TDN_VERIFICATION_CLICKED only for a user's click: neither TDM_CLICK_VERIFICATION nor the box's MSAA default
-            // action reaches the callback on the hidden desktop. So the dialog is shown as Show shows it, and the test hands its
-            // callback the notification a click would send, then reads the real button's state.
-            nint callback = 0, data = 0;
-            void Verification(nint dialog, bool isChecked) =>
-                ((delegate* unmanaged<nint, uint, nint, nint, nint, int>)callback)(dialog, ComCtl32.TdnVerificationClicked, isChecked ? 1 : 0, 0, data);
+            // TDM_CLICK_VERIFICATION toggles the box as a click does, and only while the box is enabled: comctl32 disables it when
+            // TaskDialogIndirect gets no pfVerificationFlagChecked. So this goes through Show, as the owner's click would.
+            void Verification(nint dialog, bool isChecked) => User32.SendMessage(dialog, TDM_CLICK_VERIFICATION, isChecked ? 1 : 0, 0);
 
-            confirmed = ConfirmDialog.Build(0, ConfirmKind.EndTask, 1, null, true, "csrss.exe", dialog =>
+            confirmed = ConfirmDialog.Show(0, ConfirmKind.EndTask, 1, null, true, "csrss.exe", dialog =>
             {
                 var button = TaskDialogDriver.FindDescendant(dialog, "Button", ActionStrings.ShutDown);
                 found = button != 0;
@@ -181,11 +179,6 @@ public unsafe class ConfirmDialogTests
                 Verification(dialog, false);
                 whenUnchecked = TaskDialogDriver.IsWindowEnabled(button);
                 driver.Created(dialog, IDCANCEL);
-            }, (in ComCtl32.TaskDialogConfig c) =>
-            {
-                callback = (nint)c.Callback;
-                data = c.CallbackData;
-                return ComCtl32.TaskDialogIndirect(c, out var pressed, null, null) >= 0 && pressed == ConfirmDialog.CustomButtonId;
             });
             driver.Closed();
             fired = driver.WatchdogFired;

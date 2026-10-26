@@ -39,8 +39,12 @@ internal static unsafe class ConfirmDialog
     /// </param>
     internal static bool Show(nint owner, ConfirmKind kind, int count, string? singleName, bool critical, string? criticalName, Action<nint>? onCreated) =>
         Build(owner, kind, count, singleName, critical, criticalName, onCreated, static (in config) =>
+        {
+            // comctl32 disables the verification box when it has nowhere to report the box's state, so it always gets somewhere.
+            int verificationChecked;
             // A dialog that failed to show confirms nothing.
-            ComCtl32.TaskDialogIndirect(config, out var button, null, null) >= 0 && button == CustomButtonId);
+            return ComCtl32.TaskDialogIndirect(config, out var button, null, &verificationChecked) >= 0 && button == CustomButtonId;
+        });
 
     internal delegate T ConfigUse<out T>(in ComCtl32.TaskDialogConfig config);
 
