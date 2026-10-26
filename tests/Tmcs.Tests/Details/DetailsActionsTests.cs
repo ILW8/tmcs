@@ -134,6 +134,20 @@ public partial class DetailsActionsTests
     });
 
     [Fact]
+    public void A_right_click_outside_the_client_area_opens_no_row_menu() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Select(2);
+
+        // On the vertical scrollbar, or just past the client area: DefWindowProc's own scrollbar menu is shown there, not the row menu.
+        RightClick(rig.List, rig.List.PointToScreen(new Point(rig.List.ClientSize.Width + 3, 50)));
+        RightClick(rig.List, rig.List.PointToScreen(new Point(-3, 50)));
+
+        Assert.Empty(rig.Menus);
+        Assert.Empty(rig.Actions.Calls);
+    });
+
+    [Fact]
     public void Menu_acts_on_the_selection_captured_when_it_opened() => Sta.Run(() =>
     {
         using var rig = new Rig();

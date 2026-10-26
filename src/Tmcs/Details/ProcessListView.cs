@@ -141,11 +141,9 @@ internal sealed class ProcessListView : ListView
             return; // base would also open the row ContextMenuStrip
         }
 
-        if (m.Msg == WmContextMenu && m.WParam != 0 && m.WParam == Handle)
-        {
-            RaiseRowContextMenu(m.LParam);
-            return; // base would open a ContextMenuStrip, or pass the message on to the parent
-        }
+        // Base would open a ContextMenuStrip, or pass the message on to the parent; a right-click outside the client area goes to
+        // base, which shows the scrollbar's own menu.
+        if (m.Msg == WmContextMenu && m.WParam != 0 && m.WParam == Handle && RaiseRowContextMenu(m.LParam)) return;
 
         // The list's own notifications, which its parent reflects back here.
         if (m.Msg == User32.WmReflectNotify && m.LParam != 0 && CellSource is { } cells && AnswerNotify(ref m, cells)) return;
@@ -251,7 +249,8 @@ internal sealed class ProcessListView : ListView
         HeaderContextMenu?.Invoke(column, new Point(point.X, point.Y));
     }
 
-    private void RaiseRowContextMenu(nint lParam)
+    /// <returns>False for a right click outside the client area, on a scrollbar: it keeps its own menu.</returns>
+    private bool RaiseRowContextMenu(nint lParam)
     {
         Point screen;
         if (unchecked((int)lParam) == -1)
@@ -268,8 +267,10 @@ internal sealed class ProcessListView : ListView
         {
             // Signed words: screen coordinates are negative left of or above the primary monitor.
             screen = new Point(unchecked((short)lParam), unchecked((short)(lParam >> 16)));
+            if (!ClientRectangle.Contains(PointToClient(screen))) return false;
         }
 
         RowContextMenu?.Invoke(screen);
+        return true;
     }
 }
