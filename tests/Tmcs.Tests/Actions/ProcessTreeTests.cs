@@ -41,4 +41,26 @@ public class ProcessTreeTests
 
         Assert.Equal([leaf.Id], ProcessTree.OrderForEnding(leaf.Id, rows));
     }
+
+    [Fact]
+    public void A_gone_descendant_is_skipped_but_a_failed_root_is_not()
+    {
+        // 10 ─┬─ 20 (gone since the snapshot)
+        //     └─ 30
+        var root = Row(10, 100, 1);
+        var rows = new[] { root, Row(20, 200, 10), Row(30, 300, 10) };
+        var denied = new ActionOutcome(ActionOutcome.EAccessDenied, ShowDialog: true);
+
+        var ended = new List<int>();
+        var result = ProcessTree.EndEach(root.Id, rows, id => { ended.Add(id.Pid); return id.Pid == 20 ? ActionOutcome.Gone : ActionOutcome.Success; });
+        Assert.Equal(ActionOutcome.Success, result);
+        Assert.Equal([10, 20, 30], ended.Order());
+        Assert.Equal(10, ended[^1]);
+
+        // The root keeps the normal rules: gone is still the "not valid for this process" dialog.
+        Assert.Equal(ActionOutcome.Gone, ProcessTree.EndEach(root.Id, rows, id => id.Pid == 10 ? ActionOutcome.Gone : ActionOutcome.Success));
+
+        // A descendant that fails for any other reason still counts, and the first dialog-worthy failure wins.
+        Assert.Equal(denied, ProcessTree.EndEach(root.Id, rows, id => id.Pid == 10 ? ActionOutcome.Gone : id.Pid == 30 ? denied : ActionOutcome.Success));
+    }
 }

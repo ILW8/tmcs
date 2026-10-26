@@ -12,6 +12,16 @@ internal readonly record struct ActionOutcome(int HResult, bool ShowDialog)
 
     public static ActionOutcome Success => new(0, false);
 
+    /// <summary>
+    /// The process is gone: it can't be opened because it exited, or its PID now belongs to a process with another creation time.
+    /// Shown like any E_INVALIDARG ("The operation is not valid for this process."), except where a caller skips it on purpose
+    /// (<see cref="ProcessTree.EndEach"/> for a descendant).
+    /// </summary>
+    public static ActionOutcome Gone => new(EInvalidArg, ShowDialog: true) { IsGone = true };
+
+    /// <summary>Set only by <see cref="Gone"/>.</summary>
+    public bool IsGone { get; init; }
+
     public bool Ok => HResult >= 0;
     public bool IsAccessDenied => HResult == EAccessDenied;
     public bool IsInvalidArg => HResult == EInvalidArg;

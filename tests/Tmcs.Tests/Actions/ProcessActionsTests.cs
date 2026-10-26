@@ -67,6 +67,7 @@ public class ProcessActionsTests
             var outcome = actions.EndTask(new(pid, 0));
             Assert.True(outcome.IsInvalidArg, $"PID {pid}: 0x{outcome.HResult:X8}");
             Assert.True(outcome.ShowDialog);
+            Assert.False(outcome.IsGone);
         }
     }
 
@@ -93,6 +94,7 @@ public class ProcessActionsTests
             var outcome = new ProcessActions().EndTask(id with { CreateTime = id.CreateTime + 1 });
             Assert.True(outcome.IsInvalidArg);
             Assert.True(outcome.ShowDialog);
+            Assert.True(outcome.IsGone);
             Assert.False(child.WaitForExit(300));
         }
         finally { Kill(child); }
@@ -114,8 +116,8 @@ public class ProcessActionsTests
             // With the PID still held, the open succeeds and TerminateProcess is denied: no dialog, and the handle closer is queued,
             // which finds the process already gone (STATUS_PROCESS_IS_TERMINATING) and stops.
             var again = actions.EndTask(id);
-            Assert.False(again.Ok);
-            if (again.IsAccessDenied) Assert.False(again.ShowDialog);
+            Assert.True(again.IsAccessDenied, $"0x{again.HResult:X8}");
+            Assert.False(again.ShowDialog);
             Assert.False(bystander.WaitForExit(300));
         }
         finally
@@ -184,7 +186,8 @@ public class ProcessActionsTests
             var id = IdOf(target);
             var targetBefore = HandleCount(target);
             var bystanderBefore = HandleCount(bystander);
-            var selfBefore = HandleCount(Process.GetCurrentProcess());
+            using var self = Process.GetCurrentProcess();
+            var selfBefore = HandleCount(self);
 
             // Run on a worker so a hang fails the test instead of stalling the run.
             var run = Task.Run(() => ProcessActions.CloseHandlesOf(id));
@@ -195,7 +198,7 @@ public class ProcessActionsTests
             Assert.False(target.HasExited);
             Assert.True(HandleCount(target) < targetBefore / 2, $"target handles {targetBefore} -> {HandleCount(target)}");
             Assert.Equal(bystanderBefore, HandleCount(bystander));
-            Assert.InRange(HandleCount(Process.GetCurrentProcess()), 0, selfBefore + 10);
+            Assert.InRange(HandleCount(self), 0, selfBefore + 10);
         }
         finally
         {

@@ -18,7 +18,9 @@ internal sealed unsafe class ProcessActions : IProcessActions
 
     const int EFail = unchecked((int)0x80004005);
 
-    // 37226 "The operation is not valid for this process.": a refused PID, or a PID that now belongs to another process.
+    const int ErrorInvalidParameter = 87;
+
+    // 37226 "The operation is not valid for this process.": a PID Task Manager refuses outright.
     static readonly ActionOutcome NotValidForThisProcess = new(ActionOutcome.EInvalidArg, ShowDialog: true);
 
     // The handle list is read into a buffer that grows until it fits. Past the maximum, the answer is treated as garbage.
@@ -43,11 +45,16 @@ internal sealed unsafe class ProcessActions : IProcessActions
         if (id.Pid is 0 or 1 or 4 or 5) return NotValidForThisProcess;
 
         var process = Kernel32.OpenProcess(EndTaskAccess, false, id.Pid);
-        if (process == 0) return new(LastErrorHResult(Marshal.GetLastPInvokeError()), ShowDialog: true);
+        if (process == 0)
+        {
+            // ERROR_INVALID_PARAMETER is how OpenProcess says no process has this PID: it exited since the row was read.
+            var openError = Marshal.GetLastPInvokeError();
+            return openError == ErrorInvalidParameter ? ActionOutcome.Gone : new(LastErrorHResult(openError), ShowDialog: true);
+        }
         try
         {
             // The PID may have been reused since the row was read. Never end another process.
-            if (!IsSameProcess(process, id)) return NotValidForThisProcess;
+            if (!IsSameProcess(process, id)) return ActionOutcome.Gone;
 
             if (Kernel32.TerminateProcess(process, 1)) return ActionOutcome.Success;
 
@@ -65,16 +72,7 @@ internal sealed unsafe class ProcessActions : IProcessActions
         }
     }
 
-    public ActionOutcome EndProcessTree(ProcessIdentity id, IReadOnlyList<ProcessRow> snapshot)
-    {
-        var first = ActionOutcome.Success;
-        foreach (var each in ProcessTree.OrderForEnding(id, snapshot))
-        {
-            var outcome = EndTask(each);
-            if (outcome.ShowDialog && !first.ShowDialog) first = outcome;
-        }
-        return first;
-    }
+    public ActionOutcome EndProcessTree(ProcessIdentity id, IReadOnlyList<ProcessRow> snapshot) => ProcessTree.EndEach(id, snapshot, EndTask);
 
     // Task 7 implements Set priority and Task 8 Set affinity. Until then they fail without touching the process.
     public PrioritySet SetPriority(ProcessIdentity id, ProcessPriority priority) => new(new ActionOutcome(ActionOutcome.ENotImpl, ShowDialog: true), false);

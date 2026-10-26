@@ -5,12 +5,12 @@ namespace Tmcs.Tests.Support;
 
 /// <summary>
 /// Scripted process actions. Every call succeeds unless a test sets a per-PID outcome; <see cref="Calls"/> records each call in order.
-/// <see cref="EndProcessTree"/> walks <see cref="ProcessTree.OrderForEnding"/> and calls <see cref="EndTask"/> on each, like the real one.
+/// <see cref="EndProcessTree"/> calls <see cref="EndTask"/> through <see cref="ProcessTree.EndEach"/>, like the real one.
 /// </summary>
 internal sealed class FakeProcessActions : IProcessActions
 {
-    /// <summary>What the real <see cref="ProcessActions.EndTask"/> returns when the PID was reused (the identity check failed).</summary>
-    public static readonly ActionOutcome ReusedPid = new(ActionOutcome.EInvalidArg, ShowDialog: true);
+    /// <summary>What the real <see cref="ProcessActions.EndTask"/> returns when the PID was reused (the identity check failed) or the process exited.</summary>
+    public static readonly ActionOutcome ReusedPid = ActionOutcome.Gone;
 
     /// <summary>What the real <see cref="ProcessActions.EndTask"/> returns when <c>TerminateProcess</c> is denied after a good open: no dialog.</summary>
     public static readonly ActionOutcome AccessDenied = new(ActionOutcome.EAccessDenied, ShowDialog: false);
@@ -40,13 +40,7 @@ internal sealed class FakeProcessActions : IProcessActions
     public ActionOutcome EndProcessTree(ProcessIdentity id, IReadOnlyList<ProcessRow> snapshot)
     {
         Calls.Add((nameof(EndProcessTree), id));
-        var first = ActionOutcome.Success;
-        foreach (var each in ProcessTree.OrderForEnding(id, snapshot))
-        {
-            var outcome = EndTask(each);
-            if (outcome.ShowDialog && !first.ShowDialog) first = outcome;
-        }
-        return first;
+        return ProcessTree.EndEach(id, snapshot, EndTask);
     }
 
     public PrioritySet SetPriority(ProcessIdentity id, ProcessPriority priority)

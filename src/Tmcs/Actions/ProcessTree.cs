@@ -2,7 +2,7 @@ using Tmcs.Processes;
 
 namespace Tmcs.Actions;
 
-/// <summary>The order End process tree ends processes in. Pure: it reads only the snapshot it is given.</summary>
+/// <summary>The order End process tree ends processes in, and how their outcomes combine. No Win32: it reads only the snapshot and calls only the endTask it is given.</summary>
 internal static class ProcessTree
 {
     /// <summary>
@@ -34,5 +34,22 @@ internal static class ProcessTree
                     stack.Push((child.Id, false));
         }
         return order;
+    }
+
+    /// <summary>
+    /// Ends <paramref name="root"/>'s tree with <paramref name="endTask"/>, in <see cref="OrderForEnding"/>'s order, and returns the first
+    /// outcome that needs a dialog, else Success. A descendant that is <see cref="ActionOutcome.IsGone"/> exited (or its PID was reused)
+    /// after the snapshot, which is no failure of End process tree, so it is skipped silently. The root keeps the normal rules.
+    /// </summary>
+    public static ActionOutcome EndEach(ProcessIdentity root, IReadOnlyList<ProcessRow> rows, Func<ProcessIdentity, ActionOutcome> endTask)
+    {
+        var first = ActionOutcome.Success;
+        foreach (var id in OrderForEnding(root, rows))
+        {
+            var outcome = endTask(id);
+            if (outcome.IsGone && id != root) continue;
+            if (outcome.ShowDialog && !first.ShowDialog) first = outcome;
+        }
+        return first;
     }
 }
