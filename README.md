@@ -2,6 +2,20 @@
 
 tmcs is a small, original Windows 10 Task Manager replacement written in C# (WinForms, .NET 10). It exists because the stock Task Manager leaks icons and handles when left running for days; tmcs lists processes in a virtual-mode Details view and releases per-process state, including icons, on the same tick a process exits.
 
+## Features
+
+- **Details:** a virtual-mode process list that releases per-process state, icons included, on the tick a process exits.
+- **Performance:** CPU, Memory, Disk, network and GPU panes with the sidebar's mini graphs.
+- **Details actions:** right-click a row (or press the menu key) for:
+  - **End task** and **End process tree** (descendants first), each with Task Manager's confirmation.
+  - **Set priority** (Realtime, High, Above normal, Normal, Below normal, Low) with the current class checked. Without the privilege, Realtime reads back as High and tmcs says so.
+  - **Set affinity**, a "Processor affinity" dialog with `<All Processors>` and one box per CPU (one processor group, up to 64).
+  - **Open file location**, **Properties** and **Copy** > **PID** / **Image path**.
+- **Delete** ends the selected tasks, and the **End task** button at the bottom right does too. Both work on the whole selection. Set priority, Set affinity, Open file location, Properties and Copy need exactly one row, and the last three are grayed when the process has no image path.
+- **File** > **Run new task** opens the shell's own Run dialog, with its "Create this task with administrative privileges" box.
+
+These really end and re-prioritize processes: try them on disposable ones. The Debug build is not elevated, so access denied on a protected process is expected (it shows the "need administrator" dialog). The Release build, and so the published exe, runs elevated.
+
 ## Build and test
 
 ```

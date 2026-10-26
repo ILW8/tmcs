@@ -9,8 +9,8 @@ using Tmcs.Settings;
 
 namespace Tmcs.Tests.Details;
 
-// No test opens the header menu or the Select columns dialog: the rig replaces DetailsView's TrackHeaderMenu and ChooseColumns
-// with stand-ins, and the dialog test only constructs the dialog.
+// No test opens a menu, a dialog, a shell window or the clipboard: the rig replaces every one of DetailsView's UI seams with a
+// stand-in that throws, a test that needs one replaces it again, and the Select columns test only constructs the dialog.
 public partial class DetailsViewTests
 {
     // Values the tests check are written out here rather than taken from User32, so a wrong production constant shows up.
@@ -643,9 +643,17 @@ public partial class DetailsViewTests
             Settings = settings ?? AppSettings.CreateDefault();
             Table = new ProcessTable(info ?? new FakeInfo(), 1);
             Table.Apply(Snapshot, 10_000_000);
-            View = new DetailsView(Table, _images, Settings) { Dock = DockStyle.Fill };
+            View = new DetailsView(Table, _images, Settings, new FakeProcessActions()) { Dock = DockStyle.Fill };
             View.TrackHeaderMenu = (_, _) => throw new InvalidOperationException("the test would have shown the header menu");
             View.ChooseColumns = _ => throw new InvalidOperationException("the test would have shown the dialog");
+            View.TrackRowMenu = (_, _) => throw new InvalidOperationException("the test would have shown the row menu");
+            View.Confirm = (_, _, _) => throw new InvalidOperationException("the test would have shown the confirmation");
+            View.ChooseAffinity = (_, _) => throw new InvalidOperationException("the test would have shown the affinity dialog");
+            View.ShowError = (_, _, _) => throw new InvalidOperationException("the test would have shown the error dialog");
+            View.ShowNotice = (_, _) => throw new InvalidOperationException("the test would have shown a notice");
+            View.OpenLocation = _ => throw new InvalidOperationException("the test would have opened Explorer");
+            View.ShowProperties = _ => throw new InvalidOperationException("the test would have shown the Properties window");
+            View.CopyText = _ => throw new InvalidOperationException("the test would have written the clipboard");
             View.SettingsChanged += (_, _) => SettingsChanged++;
             _form.Controls.Add(View);
             _form.ShowOffscreen();

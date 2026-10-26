@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Tmcs.Details;
 using Tmcs.Native;
 
 namespace Tmcs.Tests.Support;
@@ -93,6 +94,25 @@ internal sealed partial class OffscreenMainForm : MainForm
         // Only used when the settings hold no position yet; a saved one goes through the off-screen working area.
         StartPosition = FormStartPosition.Manual;
         Location = OffscreenArea.Location;
+        RefuseDetailsUi(Details);
+    }
+
+    /// <summary>
+    /// Replaces every UI seam of the Details view with a stand-in that throws, so no test of the form can open a real menu, dialog,
+    /// shell window or the clipboard. A test that needs a seam replaces it again.
+    /// </summary>
+    private static void RefuseDetailsUi(DetailsView view)
+    {
+        view.TrackHeaderMenu = (_, _) => throw new InvalidOperationException("the test would have shown the header menu");
+        view.ChooseColumns = _ => throw new InvalidOperationException("the test would have shown the Select columns dialog");
+        view.TrackRowMenu = (_, _) => throw new InvalidOperationException("the test would have shown the row menu");
+        view.Confirm = (_, _, _) => throw new InvalidOperationException("the test would have shown the confirmation");
+        view.ChooseAffinity = (_, _) => throw new InvalidOperationException("the test would have shown the affinity dialog");
+        view.ShowError = (_, _, _) => throw new InvalidOperationException("the test would have shown the error dialog");
+        view.ShowNotice = (_, _) => throw new InvalidOperationException("the test would have shown a notice");
+        view.OpenLocation = _ => throw new InvalidOperationException("the test would have opened Explorer");
+        view.ShowProperties = _ => throw new InvalidOperationException("the test would have shown the Properties window");
+        view.CopyText = _ => throw new InvalidOperationException("the test would have written the clipboard");
     }
 
     protected override bool ShowWithoutActivation => true;

@@ -1,3 +1,4 @@
+using Tmcs.Actions;
 using Tmcs.Icons;
 using Tmcs.Native;
 using Tmcs.Performance;
@@ -21,7 +22,8 @@ internal sealed record AppServices(
     ISampleTimer Timer,
     SettingsStore Store,
     LaunchOptions Options,
-    DeviceSources Devices)
+    DeviceSources Devices,
+    IProcessActions Actions)
 {
     /// <summary>The real system sources. Call on the UI thread: the sample timer ticks on the thread that creates it.</summary>
     public static AppServices CreateReal(LaunchOptions o)
@@ -38,6 +40,7 @@ internal sealed record AppServices(
             new WinFormsSampleTimer(),
             new SettingsStore(SettingsStore.DefaultPath),
             o,
-            DeviceSources.CreateReal());
+            DeviceSources.CreateReal(),
+            new ProcessActions());
     }
 }

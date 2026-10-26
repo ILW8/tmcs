@@ -16,6 +16,12 @@ internal static partial class User32
     /// <summary><c>LVM_GETNEXTITEM</c>: wParam is the item to start after (-1 for the first), lParam the <c>LVNI_*</c> flags; returns the item or -1.</summary>
     public const uint LvmGetNextItem = 0x100C;
 
+    /// <summary><c>LVM_GETITEMRECT</c>: wParam is the item, lParam a <see cref="NativeRect"/> whose <c>Left</c> holds an <c>LVIR_*</c> value on entry; returns nonzero on success.</summary>
+    public const uint LvmGetItemRect = 0x100E;
+
+    /// <summary><c>LVIR_BOUNDS</c>: the whole row, every column included.</summary>
+    public const int LvirBounds = 0;
+
     /// <summary><c>LVM_GETHEADER</c>: returns the header control's handle.</summary>
     public const uint LvmGetHeader = 0x101F;
 
@@ -51,6 +57,12 @@ internal static partial class User32
 
     /// <summary><c>LVN_GETDISPINFOW</c>: an owner-data list view asks for an item's text, image or indent. lParam is an <see cref="NmLvDispInfo"/>.</summary>
     public const int LvnGetDispInfoW = -177;
+
+    /// <summary><c>LVN_ITEMCHANGED</c>: an item's state changed, which includes it being selected or deselected.</summary>
+    public const int LvnItemChanged = -101;
+
+    /// <summary><c>LVN_ODSTATECHANGED</c>: the state of a range of items in an owner-data list view changed at once.</summary>
+    public const int LvnOdStateChanged = -115;
 
     /// <summary><c>LVN_ODCACHEHINT</c>: an owner-data list view names the rows it is about to draw. lParam is an <c>NMLVCACHEHINT</c>.</summary>
     public const int LvnOdCacheHint = -113;
@@ -127,6 +139,9 @@ internal static partial class User32
     /// <summary><c>MF_BYCOMMAND</c>: the item is named by its command id, which also searches submenus.</summary>
     public const uint MfByCommand = 0x0;
 
+    /// <summary><c>MF_BYPOSITION</c>: the item is named by its zero-based position in the menu. A submenu's item can only be named so.</summary>
+    public const uint MfByPosition = 0x400;
+
     /// <summary><c>MF_GRAYED</c>.</summary>
     public const uint MfGrayed = 0x1;
 
@@ -141,6 +156,12 @@ internal static partial class User32
 
     /// <summary><c>SM_CXSMICON</c>: the recommended small icon width.</summary>
     public const int SmCxSmIcon = 49;
+
+    /// <summary><c>SM_CLEANBOOT</c>: how the system started. 0 is a normal boot; anything else is a Safe Mode.</summary>
+    public const int SmCleanBoot = 67;
+
+    /// <summary><c>WM_NOTIFY</c>: a control or a dialog tells its owner about an event. lParam starts with an <see cref="NmHdr"/>.</summary>
+    public const int WmNotify = 0x004E;
 
     /// <summary><c>SW_RESTORE</c>: un-minimizes a window. On a maximized window that is not minimized it un-maximizes it.</summary>
     public const int SwRestore = 9;
@@ -417,6 +438,10 @@ internal static partial class User32
     /// <returns>The metric scaled for <paramref name="dpi"/>, or 0 on failure.</returns>
     [LibraryImport("user32.dll")]
     public static partial int GetSystemMetricsForDpi(int index, uint dpi);
+
+    /// <returns>The metric, or 0 on failure.</returns>
+    [LibraryImport("user32.dll")]
+    public static partial int GetSystemMetrics(int index);
 
     /// <returns>A copy the caller must destroy with <see cref="DestroyIcon"/>, or 0 on failure.</returns>
     [LibraryImport("user32.dll", SetLastError = true)]

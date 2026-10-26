@@ -1,5 +1,8 @@
 using System.ComponentModel;
+using System.Globalization;
+using Tmcs.Actions;
 using Tmcs.Icons;
+using Tmcs.Native;
 using Tmcs.Processes;
 using Tmcs.Settings;
 using Tmcs.Ui;
@@ -8,18 +11,32 @@ namespace Tmcs.Details;
 
 /// <summary>
 /// The Details tab: the process list with the owner's columns, sorting, column hide/select/reorder/resize, type-to-jump,
-/// and a selection that stays on the same processes across refreshes. Column changes are written to the <see cref="AppSettings"/>
-/// passed in, and <see cref="SettingsChanged"/> tells the owner to save them.
+/// a selection that stays on the same processes across refreshes, and the row menu and Delete key that act on the selection.
+/// Column changes are written to the <see cref="AppSettings"/> passed in, and <see cref="SettingsChanged"/> tells the owner to save them.
 /// </summary>
 internal sealed class DetailsView : UserControl, ICellSource
 {
     private const int HideColumnCommand = 1;
     private const int SelectColumnsCommand = 2;
 
+    // The row menu's submenus, by position: a submenu's item has no command id to name it by.
+    private const int SetPriorityPosition = 3;
+    private const int CopyPosition = 8;
+
+    // The bottom band and its End task button, in 96-DPI units (spec 4.2), measured from Task Manager: see
+    // docs/superpowers/reference/2026-10-26-taskmgr-details-button.md.
+    private const int BandHeight = 48;
+    private const int ButtonWidth = 85;
+    private const int ButtonHeight = 23;
+    private const int ButtonTop = 12; // below the band's top
+    private const int ButtonRightMargin = 8;
+
     private readonly ProcessTable _table;
     private readonly AppSettings _settings;
     private readonly ProcessListView _list;
     private readonly SelectionKeeper _selection;
+    private readonly IProcessActions _actions;
+    private readonly Button _endTask;
 
     /// <summary>The rows on screen, in display order. Reused by every refresh.</summary>
     private readonly List<ProcessRow> _rows = [];
@@ -36,12 +53,16 @@ internal sealed class DetailsView : UserControl, ICellSource
     /// <summary>True while <see cref="ApplyColumnSettings"/> replaces the columns, whose width events must not reach the settings.</summary>
     private bool _rebuilding;
 
-    /// <summary>Shows the rows of <paramref name="table"/> with the layout in <paramref name="settings"/>. The caller owns <paramref name="images"/>, the row icons, and keeps them alive as long as this view.</summary>
-    public DetailsView(ProcessTable table, NativeImageList images, AppSettings settings)
+    /// <summary>
+    /// Shows the rows of <paramref name="table"/> with the layout in <paramref name="settings"/>, and acts on them through
+    /// <paramref name="actions"/>. The caller owns <paramref name="images"/>, the row icons, and keeps them alive as long as this view.
+    /// </summary>
+    public DetailsView(ProcessTable table, NativeImageList images, AppSettings settings, IProcessActions actions)
     {
         _table = table;
         _settings = settings;
-        _list = new ProcessListView { Dock = DockStyle.Fill, SharedImageList = images.Handle, CellSource = this };
+        _actions = actions;
+        _list = new ProcessListView { SharedImageList = images.Handle, CellSource = this };
         _selection = new SelectionKeeper(_list);
         _list.RetrieveVirtualItem += OnRetrieveVirtualItem;
         _list.SearchForVirtualItem += OnSearchForVirtualItem;
@@ -49,12 +70,20 @@ internal sealed class DetailsView : UserControl, ICellSource
         _list.ColumnReordered += OnColumnReordered;
         _list.ColumnWidthChanged += OnColumnWidthChanged;
         _list.HeaderContextMenu += OnHeaderContextMenu;
+        _list.RowContextMenu += OnRowContextMenu;
+        _list.ItemStateChanged += UpdateEndTaskButton;
         // The list raises HandleCreated before it inserts its header items, so the arrow goes on once that has finished.
         _list.HandleCreated += (_, _) =>
         {
             if (IsHandleCreated) BeginInvoke(UpdateSortArrow);
         };
+        // &End task (string 38001). It follows the selection and runs the same flow as the row menu's End task.
+        _endTask = new Button { Text = "&End task", Enabled = false, FlatStyle = FlatStyle.System };
+        _endTask.Click += (_, _) => EndSelected();
+        BackColor = SystemColors.Window;
         Controls.Add(_list);
+        Controls.Add(_endTask);
+        LayoutBand(DeviceDpi);
 
         TrackHeaderMenu = (menu, screen) => menu.Track(this, screen);
         ChooseColumns = s =>
@@ -62,6 +91,22 @@ internal sealed class DetailsView : UserControl, ICellSource
             using var dialog = new SelectColumnsDialog(s);
             return dialog.ShowDialog(this) == DialogResult.OK ? dialog.Selected : null;
         };
+        TrackRowMenu = (selection, screen) =>
+        {
+            using var menu = PrepareRowMenu(selection);
+            return menu.Track(this, screen);
+        };
+        Confirm = (kind, count, singleName) => ConfirmDialog.Show(DialogOwner, kind, count, singleName);
+        ChooseAffinity = (name, info) =>
+        {
+            using var dialog = new ProcessorAffinityDialog(name, info);
+            return dialog.ShowDialog(DialogOwner) == DialogResult.OK ? dialog.Mask : null;
+        };
+        ShowError = (kind, outcome, isElevated) => ErrorDialog.Show(DialogOwner, kind, outcome, isElevated);
+        ShowNotice = (title, body) => ErrorDialog.ShowNotice(DialogOwner, title, body);
+        OpenLocation = ShellActions.OpenFileLocation;
+        ShowProperties = path => ShellActions.ShowProperties((FindForm() ?? (Control)this).Handle, path);
+        CopyText = ShellActions.CopyText;
 
         ApplyColumnSettings();
     }
@@ -80,6 +125,50 @@ internal sealed class DetailsView : UserControl, ICellSource
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Func<AppSettings, IReadOnlySet<DetailsColumn>?> ChooseColumns { get; set; }
 
+    /// <summary>Shows the row menu for the selection it is given and returns the chosen command id, or 0. Tests replace it so no menu opens.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<IReadOnlyList<ProcessRow>, Point, int> TrackRowMenu { get; set; }
+
+    /// <summary>
+    /// Asks before a command acts, given the kind, the row count and the one row's name. True goes ahead. Tests replace it so no
+    /// dialog opens.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<ConfirmKind, int, string?, bool> Confirm { get; set; }
+
+    /// <summary>
+    /// Shows the Processor affinity dialog for the process with this name, seeded with these masks, and returns the chosen mask, or
+    /// null on Cancel. Tests replace it so no dialog opens.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<string, AffinityInfo, nuint?> ChooseAffinity { get; set; }
+
+    /// <summary>Shows why a command failed, given whether tmcs runs elevated. Tests replace it so no dialog opens.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<ErrorKind, ActionOutcome, bool> ShowError { get; set; }
+
+    /// <summary>Shows a notice in the error dialog's form, given its title and text. Tests replace it so no dialog opens.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string, string> ShowNotice { get; set; }
+
+    /// <summary>Opens Explorer on the folder of an image path and selects the file. Tests replace it so no window opens.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string> OpenLocation { get; set; }
+
+    /// <summary>Shows the shell's Properties window for an image path, owned by this view's window. Tests replace it so no window opens.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string> ShowProperties { get; set; }
+
+    /// <summary>Puts text on the clipboard. Tests replace it so the owner's clipboard is not written.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string> CopyText { get; set; }
+
+    /// <summary>The End task button below the list, enabled while a row is selected.</summary>
+    internal Button EndTaskButton => _endTask;
+
+    /// <summary>The dialogs' owner: the window this view is in.</summary>
+    private IWin32Window DialogOwner => FindForm() ?? (IWin32Window)this;
+
     /// <summary>Copies the table's rows, sorts them per the settings, and keeps the selection on the same processes.</summary>
     public void RefreshRows()
     {
@@ -89,6 +178,7 @@ internal sealed class DetailsView : UserControl, ICellSource
         RowSorter.Sort(_rows, _settings.SortColumn, _settings.SortDescending);
         _list.SetItemCountKeepScroll(_rows.Count);
         _selection.Restore(_rows); // after the count, so rows that moved past the old end can be selected
+        UpdateEndTaskButton();
         _list.Invalidate();
     }
 
@@ -193,6 +283,36 @@ internal sealed class DetailsView : UserControl, ICellSource
         SettingsChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Puts the list above a bottom band and the End task button at the band's right, from the 96-DPI values scaled to
+    /// <paramref name="dpi"/>. The list fills what the band leaves.
+    /// </summary>
+    internal void LayoutBand(int dpi)
+    {
+        int Scaled(int units) => (int)Math.Round(units * dpi / 96.0, MidpointRounding.AwayFromZero);
+
+        var width = ClientSize.Width;
+        var band = Scaled(BandHeight);
+        var top = Math.Max(0, ClientSize.Height - band);
+        SuspendLayout(); // a child's new bounds would otherwise lay this view out again, at its own DPI
+        _list.Bounds = new Rectangle(0, 0, width, top);
+        _endTask.Bounds = new Rectangle(width - Scaled(ButtonRightMargin) - Scaled(ButtonWidth), top + Scaled(ButtonTop), Scaled(ButtonWidth), Scaled(ButtonHeight));
+        ResumeLayout(false);
+    }
+
+    protected override void OnLayout(LayoutEventArgs e)
+    {
+        base.OnLayout(e);
+        LayoutBand(DeviceDpi);
+    }
+
+    /// <summary>Enables the End task button while at least one row is selected.</summary>
+    private void UpdateEndTaskButton()
+    {
+        var any = _list.IsHandleCreated && User32.SendMessage(_list.Handle, User32.LvmGetSelectedCount, 0, 0) != 0;
+        if (_endTask.Enabled != any) _endTask.Enabled = any;
+    }
+
     private int ToPixels(int width) => (int)Math.Round(width * DeviceDpi / 96.0, MidpointRounding.AwayFromZero);
 
     private int ToUnits(int pixels) => (int)Math.Round(pixels * 96.0 / DeviceDpi, MidpointRounding.AwayFromZero);
@@ -282,5 +402,223 @@ internal sealed class DetailsView : UserControl, ICellSource
         }
 
         if (changed) VisibilityChanged();
+    }
+
+    /// <summary>The selected rows' processes, in display order.</summary>
+    internal IReadOnlyList<ProcessIdentity> SelectedIdentities() => SelectedRows().ConvertAll(r => r.Id);
+
+    /// <summary>
+    /// The row menu for <paramref name="selection"/> (reference 1.2, plus the spec's Copy), each item enabled or grayed for it. The
+    /// caller disposes it. <see cref="TrackRowMenu"/> shows it; tests read it.
+    /// </summary>
+    internal NativeMenu PrepareRowMenu(IReadOnlyList<ProcessRow> selection)
+    {
+        var menu = NativeMenu.Popup(("&End task", CommandIds.EndTask), ("End process &tree", CommandIds.EndProcessTree));
+        try
+        {
+            var priority = NativeMenu.Popup(
+                ("&Realtime", CommandIds.PriorityRealtime), ("&High", CommandIds.PriorityHigh), ("&Above normal", CommandIds.PriorityAboveNormal),
+                ("&Normal", CommandIds.PriorityNormal), ("&Below normal", CommandIds.PriorityBelowNormal), ("&Low", CommandIds.PriorityLow));
+            try
+            {
+                menu.AddSeparator().AddPopup("Set &priority", priority);
+            }
+            catch
+            {
+                priority.Dispose(); // not yet owned by the row menu
+                throw;
+            }
+
+            var copy = NativeMenu.Popup(("&PID", CommandIds.CopyPid), ("&Image path", CommandIds.CopyImagePath));
+            try
+            {
+                menu.AddItem("Set a&ffinity", CommandIds.SetAffinity)
+                    .AddSeparator()
+                    .AddItem("&Open file location", CommandIds.OpenFileLocation)
+                    .AddItem("P&roperties", CommandIds.Properties)
+                    .AddPopup("&Copy", copy);
+            }
+            catch
+            {
+                copy.Dispose(); // not yet owned by the row menu
+                throw;
+            }
+
+            // End task and End process tree act on every selected row; the rest act on one row, and the shell's items need its file.
+            var single = selection.Count == 1;
+            var hasFile = single && !string.IsNullOrEmpty(selection[0].Info.ImagePath);
+            menu.SetEnabledAt(SetPriorityPosition, single);
+            menu.SetEnabled(CommandIds.SetAffinity, single);
+            menu.SetEnabled(CommandIds.OpenFileLocation, hasFile);
+            menu.SetEnabled(CommandIds.Properties, hasFile);
+            menu.SetEnabledAt(CopyPosition, single);
+            copy.SetEnabled(CommandIds.CopyImagePath, hasFile);
+
+            // The radio mark shows the one row's class, read from its base priority. A value no class reports marks nothing.
+            if (single && ProcessPriorities.FromBasePriority(selection[0].BasePriority) is { } current)
+                priority.CheckRadio(CommandIds.PriorityRealtime, CommandIds.PriorityLow, CommandIds.ForPriority(current));
+        }
+        catch
+        {
+            menu.Dispose();
+            throw;
+        }
+
+        return menu;
+    }
+
+    /// <summary>
+    /// Carries out row-menu command <paramref name="id"/> on <paramref name="selection"/>, the rows selected when the menu opened.
+    /// Tests call it directly, since a tracked menu would block.
+    /// </summary>
+    internal void OnRowCommand(int id, IReadOnlyList<ProcessRow> selection)
+    {
+        switch (id)
+        {
+            case CommandIds.EndTask:
+                End(ConfirmKind.EndTask, selection);
+                break;
+            case CommandIds.EndProcessTree:
+                End(ConfirmKind.EndProcessTree, selection);
+                break;
+            case var _ when CommandIds.TryGetPriority(id, out var priority):
+                SetPriority(priority, selection);
+                break;
+            case CommandIds.SetAffinity:
+                SetAffinity(selection);
+                break;
+            case CommandIds.OpenFileLocation:
+                if (ImagePathOf(selection) is { } openPath) OpenLocation(openPath);
+                break;
+            case CommandIds.Properties:
+                if (ImagePathOf(selection) is { } propertiesPath) ShowProperties(propertiesPath);
+                break;
+            case CommandIds.CopyPid:
+                // Digits 0-9 whatever the culture.
+                if (selection.Count == 1) CopyText(selection[0].Id.Pid.ToString(CultureInfo.InvariantCulture));
+                break;
+            case CommandIds.CopyImagePath:
+                if (ImagePathOf(selection) is { } copyPath) CopyText(copyPath);
+                break;
+        }
+    }
+
+    /// <summary>The image path of the one selected row, or null for any other selection or a row without a path. The menu grays those commands.</summary>
+    private static string? ImagePathOf(IReadOnlyList<ProcessRow> selection) =>
+        selection is [{ Info.ImagePath: { Length: > 0 } path }] ? path : null;
+
+    /// <summary>
+    /// Delete ends the selection, as End task does. A <see cref="UserControl"/> has no KeyPreview, but this runs while the list has
+    /// the focus: the list passes the keys it does not take to its parent's <see cref="ProcessCmdKey"/>.
+    /// </summary>
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.Delete && EndSelected()) return true;
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    /// <summary>Ends the selected rows as the row menu's End task does. False, with nothing done, when no row is selected.</summary>
+    private bool EndSelected()
+    {
+        var selection = SelectedRows();
+        if (selection.Count == 0) return false;
+        OnRowCommand(CommandIds.EndTask, selection);
+        return true;
+    }
+
+    /// <summary>The selected rows, in display order, read from the list's own item state as <see cref="SelectionKeeper"/> reads it.</summary>
+    private List<ProcessRow> SelectedRows()
+    {
+        var rows = new List<ProcessRow>();
+        if (!_list.IsHandleCreated) return rows;
+        var handle = _list.Handle;
+        for (var i = NextSelected(handle, -1); i >= 0; i = NextSelected(handle, i))
+            if (i < _rows.Count)
+                rows.Add(_rows[i]);
+        return rows;
+    }
+
+    private static int NextSelected(nint list, int after) => (int)User32.SendMessage(list, User32.LvmGetNextItem, after, User32.LvniSelected);
+
+    /// <summary>The menu acts on the rows selected when it opened, even if a refresh or a click moves the selection while it is open.</summary>
+    private void OnRowContextMenu(Point screen)
+    {
+        var selection = SelectedRows();
+        if (selection.Count == 0) return;
+        var command = TrackRowMenu(selection, screen);
+        if (command != 0) OnRowCommand(command, selection);
+    }
+
+    /// <summary>
+    /// Asks once for all of <paramref name="selection"/>, then ends each process in it. A process that is gone by then (it exited, or
+    /// its PID was reused) is skipped without a word. A failure does not stop the rest, and only the first one that needs a dialog is shown.
+    /// </summary>
+    private void End(ConfirmKind kind, IReadOnlyList<ProcessRow> selection)
+    {
+        if (selection.Count == 0) return;
+
+        // End process tree asks about the selected roots only, not their descendants.
+        if (!Confirm(kind, selection.Count, selection.Count == 1 ? selection[0].Name : null)) return;
+
+        ActionOutcome? failure = null;
+        foreach (var row in selection)
+        {
+            // A tree's descendants come from the latest sample, which may be newer than the menu.
+            var outcome = kind == ConfirmKind.EndTask ? _actions.EndTask(row.Id) : _actions.EndProcessTree(row.Id, _table.Rows);
+            if (outcome.IsGone || !outcome.ShowDialog) continue;
+            failure ??= outcome;
+        }
+
+        if (failure is { } shown)
+            ShowError(kind == ConfirmKind.EndTask ? ErrorKind.EndTask : ErrorKind.EndProcessTree, shown, _actions.IsElevated);
+    }
+
+    /// <summary>
+    /// Asks, then sets the one selected row's class (reference 4). A process that is gone by then is skipped without a word. When the
+    /// class reads back other than asked (Realtime without the privilege sets High), Task Manager's "set to High instead" notice shows.
+    /// </summary>
+    private void SetPriority(ProcessPriority priority, IReadOnlyList<ProcessRow> selection)
+    {
+        // The menu grays Set priority for any other selection.
+        if (selection.Count != 1) return;
+        var row = selection[0];
+
+        if (!Confirm(ConfirmKind.SetPriority, 1, row.Name)) return;
+
+        var (outcome, readBackMatched) = _actions.SetPriority(row.Id, priority);
+        if (outcome.IsGone) return;
+        if (!outcome.Ok)
+        {
+            if (outcome.ShowDialog) ShowError(ErrorKind.SetPriority, outcome, _actions.IsElevated);
+        }
+        else if (!readBackMatched)
+        {
+            ShowNotice(ActionStrings.RealtimeNoticeTitle, ActionStrings.RealtimeNotice);
+        }
+    }
+
+    /// <summary>
+    /// Reads the one selected row's masks, asks the dialog (reference 5.1; Set affinity has no confirmation), then sets the chosen mask.
+    /// A process that is gone by then is skipped without a word.
+    /// </summary>
+    private void SetAffinity(IReadOnlyList<ProcessRow> selection)
+    {
+        // The menu grays Set affinity for any other selection.
+        if (selection.Count != 1) return;
+        var row = selection[0];
+
+        var (read, info) = _actions.GetAffinity(row.Id);
+        if (!read.Ok)
+        {
+            if (!read.IsGone && read.ShowDialog) ShowError(ErrorKind.Affinity, read, _actions.IsElevated);
+            return;
+        }
+
+        if (ChooseAffinity(row.Name, info) is not { } mask) return;
+
+        var outcome = _actions.SetAffinity(row.Id, mask);
+        if (outcome.IsGone || outcome.Ok || !outcome.ShowDialog) return;
+        ShowError(ErrorKind.Affinity, outcome, _actions.IsElevated);
     }
 }

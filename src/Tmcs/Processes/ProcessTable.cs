@@ -105,5 +105,6 @@ internal sealed class ProcessTable
         row.Handles = raw.Handles;
         row.KernelTime = raw.KernelTime;
         row.UserTime = raw.UserTime;
+        row.BasePriority = raw.BasePriority;
     }
 }

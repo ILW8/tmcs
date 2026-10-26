@@ -29,4 +29,7 @@ internal sealed class ProcessRow
     public int Handles { get; set; }
     public long KernelTime { get; set; }
     public long UserTime { get; set; }
+
+    /// <summary>The snapshot's base priority, from which the Set priority menu reads the process's class (reference 4).</summary>
+    public int BasePriority { get; set; }
 }
