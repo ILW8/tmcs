@@ -41,7 +41,20 @@ internal static unsafe partial class Kernel32
     /// <summary><c>PROCESS_QUERY_INFORMATION</c>: the full query right, which some NT information classes need.</summary>
     public const uint ProcessQueryInformation = 0x0400;
 
+    /// <summary><c>PROCESS_SET_INFORMATION</c>: lets <see cref="SetPriorityClass"/> change the process's class.</summary>
+    public const uint ProcessSetInformation = 0x0200;
+
     public const int ErrorAccessDenied = 5;
+
+    /// <param name="priorityClass">A <c>*_PRIORITY_CLASS</c> value. Realtime without <c>SeIncreaseBasePriorityPrivilege</c> succeeds but sets High.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetPriorityClass(nint process, uint priorityClass);
+
+    /// <param name="process">A handle with at least <see cref="ProcessQueryLimitedInformation"/>.</param>
+    /// <returns>The <c>*_PRIORITY_CLASS</c> value, or 0 on failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial uint GetPriorityClass(nint process);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

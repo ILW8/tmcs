@@ -43,10 +43,21 @@ internal sealed class FakeProcessActions : IProcessActions
         return ProcessTree.EndEach(id, snapshot, EndTask);
     }
 
+    /// <summary>
+    /// Models a tmcs without <c>SeIncreaseBasePriorityPrivilege</c>: a Realtime request succeeds, but the class reads back as High,
+    /// so the result has <see cref="PrioritySet.ReadBackMatched"/> false (reference 4). A per-PID outcome still wins.
+    /// </summary>
+    public bool RealtimeReadsBackAsHigh { get; set; }
+
+    /// <summary>Each <see cref="SetPriority"/> call's process and requested priority, in order.</summary>
+    public List<(ProcessIdentity Id, ProcessPriority Priority)> PrioritySets { get; } = [];
+
     public PrioritySet SetPriority(ProcessIdentity id, ProcessPriority priority)
     {
         Calls.Add((nameof(SetPriority), id));
-        return PriorityOutcomes.GetValueOrDefault(id.Pid, new PrioritySet(ActionOutcome.Success, ReadBackMatched: true));
+        PrioritySets.Add((id, priority));
+        if (PriorityOutcomes.TryGetValue(id.Pid, out var scripted)) return scripted;
+        return new PrioritySet(ActionOutcome.Success, ReadBackMatched: !(RealtimeReadsBackAsHigh && priority == ProcessPriority.Realtime));
     }
 
     public AffinityInfo? GetAffinity(ProcessIdentity id)

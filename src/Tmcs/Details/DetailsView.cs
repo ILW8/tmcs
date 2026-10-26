@@ -97,6 +97,7 @@ internal sealed class DetailsView : UserControl, ICellSource
         };
         Confirm = (kind, count, singleName, critical, criticalName) => ConfirmDialog.Show(DialogOwner, kind, count, singleName, critical, criticalName);
         ShowError = (kind, outcome, isElevated) => ErrorDialog.Show(DialogOwner, kind, outcome, isElevated);
+        ShowNotice = (title, body) => ErrorDialog.ShowNotice(DialogOwner, title, body);
 
         ApplyColumnSettings();
     }
@@ -129,6 +130,10 @@ internal sealed class DetailsView : UserControl, ICellSource
     /// <summary>Shows why a command failed, given whether tmcs runs elevated. Tests replace it so no dialog opens.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action<ErrorKind, ActionOutcome, bool> ShowError { get; set; }
+
+    /// <summary>Shows a notice in the error dialog's form, given its title and text. Tests replace it so no dialog opens.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string, string> ShowNotice { get; set; }
 
     /// <summary>The End task button below the list, enabled while a row is selected.</summary>
     internal Button EndTaskButton => _endTask;
@@ -383,11 +388,20 @@ internal sealed class DetailsView : UserControl, ICellSource
         var menu = NativeMenu.Popup(("&End task", CommandIds.EndTask), ("End process &tree", CommandIds.EndProcessTree));
         try
         {
-            menu.AddSeparator()
-                .AddPopup("Set &priority", NativeMenu.Popup(
-                    ("&Realtime", CommandIds.PriorityRealtime), ("&High", CommandIds.PriorityHigh), ("&Above normal", CommandIds.PriorityAboveNormal),
-                    ("&Normal", CommandIds.PriorityNormal), ("&Below normal", CommandIds.PriorityBelowNormal), ("&Low", CommandIds.PriorityLow)))
-                .AddItem("Set a&ffinity", CommandIds.SetAffinity)
+            var priority = NativeMenu.Popup(
+                ("&Realtime", CommandIds.PriorityRealtime), ("&High", CommandIds.PriorityHigh), ("&Above normal", CommandIds.PriorityAboveNormal),
+                ("&Normal", CommandIds.PriorityNormal), ("&Below normal", CommandIds.PriorityBelowNormal), ("&Low", CommandIds.PriorityLow));
+            try
+            {
+                menu.AddSeparator().AddPopup("Set &priority", priority);
+            }
+            catch
+            {
+                priority.Dispose(); // not yet owned by the row menu
+                throw;
+            }
+
+            menu.AddItem("Set a&ffinity", CommandIds.SetAffinity)
                 .AddSeparator()
                 .AddItem("&Open file location", CommandIds.OpenFileLocation)
                 .AddItem("P&roperties", CommandIds.Properties)
@@ -401,6 +415,10 @@ internal sealed class DetailsView : UserControl, ICellSource
             menu.SetEnabled(CommandIds.OpenFileLocation, hasFile);
             menu.SetEnabled(CommandIds.Properties, hasFile);
             menu.SetEnabledAt(CopyPosition, single);
+
+            // The radio mark shows the one row's class, read from its base priority. A value no class reports marks nothing.
+            if (single && ProcessPriorities.FromBasePriority(selection[0].BasePriority) is { } current)
+                priority.CheckRadio(CommandIds.PriorityRealtime, CommandIds.PriorityLow, CommandIds.ForPriority(current));
         }
         catch
         {
@@ -425,7 +443,10 @@ internal sealed class DetailsView : UserControl, ICellSource
             case CommandIds.EndProcessTree:
                 End(ConfirmKind.EndProcessTree, selection);
                 break;
-            // Set priority, Set affinity, Open file location, Properties and Copy do nothing yet.
+            case var _ when CommandIds.TryGetPriority(id, out var priority):
+                SetPriority(priority, selection);
+                break;
+            // Set affinity, Open file location, Properties and Copy do nothing yet.
         }
     }
 
@@ -502,5 +523,30 @@ internal sealed class DetailsView : UserControl, ICellSource
 
         if (failure is { } shown)
             ShowError(kind == ConfirmKind.EndTask ? ErrorKind.EndTask : ErrorKind.EndProcessTree, shown, _actions.IsElevated);
+    }
+
+    /// <summary>
+    /// Asks, then sets the one selected row's class (reference 4). A process that is gone by then is skipped without a word. When the
+    /// class reads back other than asked (Realtime without the privilege sets High), Task Manager's "set to High instead" notice shows.
+    /// </summary>
+    private void SetPriority(ProcessPriority priority, IReadOnlyList<ProcessRow> selection)
+    {
+        // The menu grays Set priority for any other selection.
+        if (selection.Count != 1) return;
+        var row = selection[0];
+
+        // Changing a class does not end the process, so a critical process gets the ordinary dialog.
+        if (!Confirm(ConfirmKind.SetPriority, 1, row.Name, false, null)) return;
+
+        var (outcome, readBackMatched) = _actions.SetPriority(row.Id, priority);
+        if (outcome.IsGone) return;
+        if (!outcome.Ok)
+        {
+            if (outcome.ShowDialog) ShowError(ErrorKind.SetPriority, outcome, _actions.IsElevated);
+        }
+        else if (!readBackMatched)
+        {
+            ShowNotice(ActionStrings.RealtimeNoticeTitle, ActionStrings.RealtimeNotice);
+        }
     }
 }

@@ -11,13 +11,14 @@ using Tmcs.Ui;
 
 namespace Tmcs.Tests.Details;
 
-// No test here opens the row menu or a dialog, or ends a real process: the rig replaces DetailsView's TrackRowMenu, Confirm and
-// ShowError with recorders, and its actions are a FakeProcessActions.
+// No test here opens the row menu or a dialog, or ends a real process: the rig replaces DetailsView's TrackRowMenu, Confirm,
+// ShowError and ShowNotice with recorders, and its actions are a FakeProcessActions.
 public partial class DetailsActionsTests
 {
     // Values the tests check are written out here rather than taken from production code, so a wrong constant shows up.
     private const uint MfByPosition = 0x400;
     private const uint MfGrayed = 0x1;
+    private const uint MfChecked = 0x8;
     private const uint MfSeparator = 0x800;
     private const uint WmContextMenu = 0x007B;
     private const uint WmKeyDown = 0x0100;
@@ -354,6 +355,91 @@ public partial class DetailsActionsTests
     });
 
     [Fact]
+    public void Priority_radio_checks_the_current_class() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.SetBasePriority(2, 13);
+
+        // Realtime, High, Above normal, Normal, Below normal, Low.
+        using (var menu = rig.View.PrepareRowMenu([rig.Row(2)]))
+            Assert.Equal([false, true, false, false, false, false], Checks(GetSubMenu(menu.Handle, 3)));
+
+        // Base priority 8 is Normal; 24 is Realtime; 4 is Low.
+        using (var menu = rig.View.PrepareRowMenu([rig.Row(3)]))
+            Assert.Equal([false, false, false, true, false, false], Checks(GetSubMenu(menu.Handle, 3)));
+        rig.SetBasePriority(3, 24);
+        using (var menu = rig.View.PrepareRowMenu([rig.Row(3)]))
+            Assert.Equal([true, false, false, false, false, false], Checks(GetSubMenu(menu.Handle, 3)));
+        rig.SetBasePriority(3, 4);
+        using (var menu = rig.View.PrepareRowMenu([rig.Row(3)]))
+            Assert.Equal([false, false, false, false, false, true], Checks(GetSubMenu(menu.Handle, 3)));
+
+        // A base priority that is no class's (a thread-boosted or odd value) checks nothing, and so does a multi-selection.
+        rig.SetBasePriority(1, 9);
+        using (var menu = rig.View.PrepareRowMenu([rig.Row(1)]))
+            Assert.Equal([false, false, false, false, false, false], Checks(GetSubMenu(menu.Handle, 3)));
+        using (var menu = rig.View.PrepareRowMenu([rig.Row(2), rig.Row(3)]))
+            Assert.Equal([false, false, false, false, false, false], Checks(GetSubMenu(menu.Handle, 3)));
+    });
+
+    [Fact]
+    public void Priority_confirm_then_set() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Actions.CriticalPids.Add(2); // the critical shutdown dialog is for ending only
+
+        rig.View.OnRowCommand(CommandIds.PriorityAboveNormal, [rig.Row(2)]);
+
+        Assert.Equal([(ConfirmKind.SetPriority, 1, "alpha.exe", false, null)], rig.Confirms);
+        Assert.Equal([(rig.Row(2).Id, ProcessPriority.AboveNormal)], rig.Actions.PrioritySets);
+        Assert.Empty(rig.Ended);
+        Assert.Empty(rig.Errors);
+        Assert.Empty(rig.Notices);
+
+        // Each item asks for its own class.
+        rig.Actions.PrioritySets.Clear();
+        foreach (var id in new[] { 510, 511, 512, 513, 514, 515 }) rig.View.OnRowCommand(id, [rig.Row(3)]);
+        Assert.Equal(
+            [ProcessPriority.Realtime, ProcessPriority.High, ProcessPriority.AboveNormal, ProcessPriority.Normal, ProcessPriority.BelowNormal, ProcessPriority.Low],
+            rig.Actions.PrioritySets.Select(s => s.Priority));
+
+        // Cancel sets nothing.
+        rig.Actions.PrioritySets.Clear();
+        rig.ConfirmAnswer = false;
+        rig.View.OnRowCommand(CommandIds.PriorityLow, [rig.Row(2)]);
+        Assert.Empty(rig.Actions.PrioritySets);
+    });
+
+    [Fact]
+    public void Realtime_readback_shows_the_high_notice() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Actions.RealtimeReadsBackAsHigh = true;
+
+        rig.View.OnRowCommand(CommandIds.PriorityRealtime, [rig.Row(2)]);
+        rig.View.OnRowCommand(CommandIds.PriorityHigh, [rig.Row(2)]); // matches: no notice
+
+        // 32450, 32451.
+        Assert.Equal([("Unable to change priority", "Unable to set priority to Realtime. The priority was set to High instead.")], rig.Notices);
+        Assert.Empty(rig.Errors);
+    });
+
+    [Fact]
+    public void Priority_failure_shows_the_error_and_a_gone_process_shows_nothing() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        var denied = new ActionOutcome(ActionOutcome.EAccessDenied, ShowDialog: true);
+        rig.Actions.PriorityOutcomes[2] = new PrioritySet(denied, ReadBackMatched: false);
+        rig.Actions.PriorityOutcomes[3] = new PrioritySet(ActionOutcome.Gone, ReadBackMatched: false);
+
+        rig.View.OnRowCommand(CommandIds.PriorityHigh, [rig.Row(2)]);
+        rig.View.OnRowCommand(CommandIds.PriorityHigh, [rig.Row(3)]);
+
+        Assert.Equal([(ErrorKind.SetPriority, denied, false)], rig.Errors);
+        Assert.Empty(rig.Notices);
+    });
+
+    [Fact]
     public void Thousand_menu_open_and_cancel_stay_flat() => Sta.Run(() =>
     {
         using var rig = new Rig();
@@ -397,6 +483,9 @@ public partial class DetailsActionsTests
             .Select(i => (GetMenuState(menu, (uint)i, MfByPosition) & MfGrayed) == 0),
     ];
 
+    private static bool[] Checks(nint menu) =>
+        [.. Enumerable.Range(0, GetMenuItemCount(menu)).Select(i => (GetMenuState(menu, (uint)i, MfByPosition) & MfChecked) != 0)];
+
     private static int[] Ids(nint menu) => [.. Enumerable.Range(0, GetMenuItemCount(menu)).Select(i => (int)GetMenuItemID(menu, i))];
 
     private static unsafe string[] Texts(nint menu)
@@ -426,6 +515,7 @@ public partial class DetailsActionsTests
         public readonly List<(IReadOnlyList<ProcessRow> Selection, Point Screen)> Menus = [];
         public readonly List<(ConfirmKind Kind, int Count, string? SingleName, bool Critical, string? CriticalName)> Confirms = [];
         public readonly List<(ErrorKind Kind, ActionOutcome Outcome, bool IsElevated)> Errors = [];
+        public readonly List<(string Title, string Body)> Notices = [];
         public bool ConfirmAnswer = true;
 
         /// <summary>What the menu returns; dismissed (0) unless a test sets it.</summary>
@@ -454,6 +544,7 @@ public partial class DetailsActionsTests
                 return ConfirmAnswer;
             };
             View.ShowError = (kind, outcome, isElevated) => Errors.Add((kind, outcome, isElevated));
+            View.ShowNotice = (title, body) => Notices.Add((title, body));
             _form.Controls.Add(View);
             _form.ShowOffscreen();
             View.RefreshRows();
@@ -462,6 +553,14 @@ public partial class DetailsActionsTests
         public ProcessListView List => View.Controls.OfType<ProcessListView>().Single();
 
         public ProcessRow Row(int pid) => Table.Rows.Single(r => r.Id.Pid == pid);
+
+        /// <summary>Gives <paramref name="pid"/> a new base priority in the next sample, and applies it.</summary>
+        public void SetBasePriority(int pid, int basePriority)
+        {
+            var i = Snapshot.FindIndex(p => p.Pid == pid);
+            Snapshot[i] = Snapshot[i] with { BasePriority = basePriority };
+            Table.Apply(Snapshot, 20_000_000);
+        }
 
         /// <summary>The identities EndTask was called for, in order (End process tree calls it for each process it ends).</summary>
         public IEnumerable<ProcessIdentity> Ended => Actions.Calls.Where(c => c.Action == "EndTask").Select(c => c.Id);

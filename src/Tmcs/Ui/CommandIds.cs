@@ -1,3 +1,4 @@
+using Tmcs.Actions;
 using Tmcs.Sampling;
 
 namespace Tmcs.Ui;
@@ -48,5 +49,15 @@ internal static class CommandIds
     {
         speed = (UpdateSpeed)(id - SpeedHigh);
         return id is >= SpeedHigh and <= SpeedPaused;
+    }
+
+    /// <summary>The Set priority item for <paramref name="priority"/>. The menu runs from Realtime down, the enum from Low up.</summary>
+    public static int ForPriority(ProcessPriority priority) => PriorityRealtime + (ProcessPriority.Realtime - priority);
+
+    /// <summary>The priority that <paramref name="id"/> selects, if it is a Set priority item.</summary>
+    public static bool TryGetPriority(int id, out ProcessPriority priority)
+    {
+        priority = ProcessPriority.Realtime - (id - PriorityRealtime);
+        return id is >= PriorityRealtime and <= PriorityLow;
     }
 }

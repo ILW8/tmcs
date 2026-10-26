@@ -16,6 +16,10 @@ internal sealed unsafe class ProcessActions : IProcessActions
     // PROCESS_TERMINATE | PROCESS_DUP_HANDLE | PROCESS_QUERY_LIMITED_INFORMATION (0x1041), as Task Manager reopens it to close its handles.
     const uint HandleCloserAccess = Kernel32.ProcessTerminate | Kernel32.ProcessDupHandle | Kernel32.ProcessQueryLimitedInformation;
 
+    // PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION (0x1200): SetPriorityClass needs the first, the identity check and
+    // GetPriorityClass the second.
+    const uint SetPriorityAccess = Kernel32.ProcessSetInformation | Kernel32.ProcessQueryLimitedInformation;
+
     const int EFail = unchecked((int)0x80004005);
 
     const int ErrorInvalidParameter = 87;
@@ -74,9 +78,37 @@ internal sealed unsafe class ProcessActions : IProcessActions
 
     public ActionOutcome EndProcessTree(ProcessIdentity id, IReadOnlyList<ProcessRow> snapshot) => ProcessTree.EndEach(id, snapshot, EndTask);
 
-    // Task 7 implements Set priority and Task 8 Set affinity. Until then they fail without touching the process.
-    public PrioritySet SetPriority(ProcessIdentity id, ProcessPriority priority) => new(new ActionOutcome(ActionOutcome.ENotImpl, ShowDialog: true), false);
+    public PrioritySet SetPriority(ProcessIdentity id, ProcessPriority priority)
+    {
+        // The same refusal as End task: these PIDs are not processes that can be opened (reference 3.2 step 1).
+        if (id.Pid is 0 or 1 or 4 or 5) return new(NotValidForThisProcess, false);
 
+        var process = Kernel32.OpenProcess(SetPriorityAccess, false, id.Pid);
+        if (process == 0)
+        {
+            var openError = Marshal.GetLastPInvokeError();
+            return new(openError == ErrorInvalidParameter ? ActionOutcome.Gone : new(LastErrorHResult(openError), ShowDialog: true), false);
+        }
+        try
+        {
+            if (!IsSameProcess(process, id)) return new(ActionOutcome.Gone, false);
+
+            var requested = ProcessPriorities.ToClass(priority);
+            if (!Kernel32.SetPriorityClass(process, requested))
+                return new(new(LastErrorHResult(Marshal.GetLastPInvokeError()), ShowDialog: true), false);
+
+            // Realtime without SeIncreaseBasePriorityPrivilege succeeds but sets High, which only the read-back shows (reference 4).
+            // A read-back that fails (0) contradicts nothing, so it counts as a match and no "set to High instead" notice shows.
+            var readBack = Kernel32.GetPriorityClass(process);
+            return new(ActionOutcome.Success, readBack == 0 || readBack == requested);
+        }
+        finally
+        {
+            Kernel32.CloseHandle(process);
+        }
+    }
+
+    // Task 8 implements Set affinity. Until then its calls fail without touching the process.
     public AffinityInfo? GetAffinity(ProcessIdentity id) => null;
 
     public ActionOutcome SetAffinity(ProcessIdentity id, nuint mask) => new(ActionOutcome.ENotImpl, ShowDialog: true);

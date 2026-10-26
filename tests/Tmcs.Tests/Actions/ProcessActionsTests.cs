@@ -176,6 +176,78 @@ public class ProcessActionsTests
     }
 
     [Fact]
+    public void Set_priority_changes_the_class()
+    {
+        var child = Start();
+        try
+        {
+            var set = new ProcessActions().SetPriority(IdOf(child), ProcessPriority.BelowNormal);
+
+            Assert.True(set.Outcome.Ok, $"0x{set.Outcome.HResult:X8}");
+            Assert.True(set.ReadBackMatched);
+            child.Refresh();
+            Assert.Equal(ProcessPriorityClass.BelowNormal, child.PriorityClass); // BELOW_NORMAL_PRIORITY_CLASS
+        }
+        finally { Kill(child); }
+    }
+
+    [Fact]
+    public void Set_priority_refuses_a_reused_pid()
+    {
+        var child = Start();
+        try
+        {
+            var id = IdOf(child);
+            var before = child.PriorityClass; // inherited from the test host, whatever its class
+            var set = new ProcessActions().SetPriority(id with { CreateTime = id.CreateTime + 1 }, ProcessPriority.Low);
+
+            Assert.True(set.Outcome.IsGone);
+            child.Refresh();
+            Assert.Equal(before, child.PriorityClass);
+        }
+        finally { Kill(child); }
+    }
+
+    [Fact]
+    public void Realtime_without_privilege_reads_back_as_high()
+    {
+        // Without SeIncreaseBasePriorityPrivilege, SetPriorityClass(REALTIME) succeeds and sets High (reference 4, probe P6). The
+        // elevated tmcs holds the privilege, so there the read-back matches whenever the class really is Realtime.
+        var child = Start();
+        try
+        {
+            var actions = new ProcessActions();
+            var set = actions.SetPriority(IdOf(child), ProcessPriority.Realtime);
+
+            Assert.True(set.Outcome.Ok, $"0x{set.Outcome.HResult:X8}");
+            child.Refresh();
+            if (!actions.IsElevated)
+            {
+                Assert.False(set.ReadBackMatched);
+                Assert.Equal(ProcessPriorityClass.High, child.PriorityClass);
+            }
+            else
+            {
+                Assert.Equal(child.PriorityClass == ProcessPriorityClass.RealTime, set.ReadBackMatched);
+            }
+        }
+        finally { Kill(child); }
+    }
+
+    [Fact]
+    public void Priority_maps_to_the_class_and_from_the_base_priority()
+    {
+        // *_PRIORITY_CLASS values and base priorities, written out (reference 4).
+        Assert.Equal(
+            [0x40u, 0x4000u, 0x20u, 0x8000u, 0x80u, 0x100u],
+            Enum.GetValues<ProcessPriority>().Select(ProcessPriorities.ToClass));
+        Assert.Equal(
+            [ProcessPriority.Low, ProcessPriority.BelowNormal, ProcessPriority.Normal, ProcessPriority.AboveNormal, ProcessPriority.High, ProcessPriority.Realtime],
+            new[] { 4, 6, 8, 10, 13, 24 }.Select(b => ProcessPriorities.FromBasePriority(b)!.Value));
+        Assert.All(new[] { 0, 5, 7, 9, 11, 15, 31 }, b => Assert.Null(ProcessPriorities.FromBasePriority(b)));
+    }
+
+    [Fact]
     public async Task Handle_closer_touches_only_the_target()
     {
         var target = StartHoldingIdlePipe();
