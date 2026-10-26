@@ -25,8 +25,8 @@ internal interface IProcessActions
 
     PrioritySet SetPriority(ProcessIdentity id, ProcessPriority priority);
 
-    /// <summary>Null when the process can't be opened or its masks can't be read.</summary>
-    AffinityInfo? GetAffinity(ProcessIdentity id);
+    /// <summary>Reads the process's affinity mask and the system's. A failed read carries its outcome, as the other actions do.</summary>
+    AffinityRead GetAffinity(ProcessIdentity id);
 
     ActionOutcome SetAffinity(ProcessIdentity id, nuint mask);
 }

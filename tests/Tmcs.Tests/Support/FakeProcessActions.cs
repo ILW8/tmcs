@@ -60,10 +60,16 @@ internal sealed class FakeProcessActions : IProcessActions
         return new PrioritySet(ActionOutcome.Success, ReadBackMatched: !(RealtimeReadsBackAsHigh && priority == ProcessPriority.Realtime));
     }
 
-    public AffinityInfo? GetAffinity(ProcessIdentity id)
+    /// <summary>A scripted failure for <see cref="GetAffinity"/>. A PID with neither this nor an entry in <see cref="Affinities"/> reads as access denied.</summary>
+    public Dictionary<int, ActionOutcome> AffinityReadOutcomes { get; } = new();
+
+    public AffinityRead GetAffinity(ProcessIdentity id)
     {
         Calls.Add((nameof(GetAffinity), id));
-        return Affinities.TryGetValue(id.Pid, out var info) ? info : null;
+        if (AffinityReadOutcomes.TryGetValue(id.Pid, out var failure)) return new(failure, default);
+        return Affinities.TryGetValue(id.Pid, out var info)
+            ? new(ActionOutcome.Success, info)
+            : new(new(ActionOutcome.EAccessDenied, ShowDialog: true), default);
     }
 
     /// <summary>Each <see cref="SetAffinity"/> call's process and requested mask, in order.</summary>

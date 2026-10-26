@@ -142,6 +142,45 @@ public class ProcessorAffinityDialogTests
     });
 
     [Fact]
+    public void Column_fills_the_list_so_every_row_has_a_label() => Sta.Run(() =>
+    {
+        using var dialog = Make(0xFF);
+
+        Assert.True(dialog.List.ClientSize.Width > 0);
+        Assert.Equal(dialog.List.ClientSize.Width, dialog.List.Columns[0].Width);
+        foreach (ListViewItem item in dialog.List.Items) Assert.True(item.Bounds.Width > 0, $"{item.Text} has no width");
+    });
+
+    [Fact]
+    public void Column_follows_the_client_width_when_a_scroll_bar_appears()
+    {
+        int clientWidth = 0, columnWidth = 0, rows = 0;
+        bool scrolls = false;
+        var emptyRows = new List<string>();
+        HiddenDesktop.Run(() =>
+        {
+            // 32 CPUs and the all-row are taller than the list, so it has a vertical scroll bar.
+            using var dialog = new ProcessorAffinityDialog("notepad.exe", new AffinityInfo(uint.MaxValue, uint.MaxValue));
+            dialog.Shown += (_, _) => dialog.BeginInvoke(() =>
+            {
+                clientWidth = dialog.List.ClientSize.Width;
+                columnWidth = dialog.List.Columns[0].Width;
+                rows = dialog.List.Items.Count;
+                scrolls = dialog.List.ClientSize.Width < dialog.List.Width - 2 * SystemInformation.Border3DSize.Width;
+                foreach (ListViewItem item in dialog.List.Items)
+                    if (item.Bounds.Width <= 0) emptyRows.Add(item.Text);
+                dialog.DialogResult = DialogResult.Cancel;
+            });
+            dialog.ShowDialog();
+        });
+
+        Assert.Equal(33, rows);
+        Assert.True(scrolls, "the list has no scroll bar");
+        Assert.Equal(clientWidth, columnWidth);
+        Assert.Empty(emptyRows);
+    }
+
+    [Fact]
     public void Thousand_open_and_cancel_stay_flat()
     {
         (int Gdi, int User, int Handles) first = default, last = default;

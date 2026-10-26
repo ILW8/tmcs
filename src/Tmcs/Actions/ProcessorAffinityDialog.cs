@@ -51,9 +51,11 @@ internal sealed class ProcessorAffinityDialog : Form
             Name = "Processors",
             Bounds = Dlu(7, 28, 188, 120),
         };
-        var column = _list.Columns.Add(string.Empty, 0);
-        // The one column fills the list, less the scroll bar when many processors need one.
-        _list.ClientSizeChanged += (_, _) => column.Width = _list.ClientSize.Width;
+        _list.Columns.Add(string.Empty, 0);
+        // The one column fills the list, less the scroll bar when many processors need one. The width is set when the window exists
+        // (the client size is final by then at 96 dpi, where nothing rescales the list) and follows every later change of it.
+        _list.HandleCreated += (_, _) => FillColumn();
+        _list.ClientSizeChanged += (_, _) => FillColumn();
 
         var all = _list.Items.Add(ActionStrings.AllProcessors);
         var everyCpu = true;
@@ -149,6 +151,12 @@ internal sealed class ProcessorAffinityDialog : Form
             _updating = false;
         }
         UpdateOk();
+    }
+
+    void FillColumn()
+    {
+        var width = _list.ClientSize.Width;
+        if (width > 0 && _list.Columns[0].Width != width) _list.Columns[0].Width = width;
     }
 
     void UpdateOk() => _ok.Enabled = Mask != 0;

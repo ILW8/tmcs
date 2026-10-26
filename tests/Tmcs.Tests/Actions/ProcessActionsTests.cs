@@ -201,16 +201,18 @@ public class ProcessActionsTests
             var id = IdOf(child);
 
             var before = actions.GetAffinity(id);
-            Assert.NotNull(before);
-            Assert.NotEqual((nuint)0, before.Value.SystemMask);
-            Assert.NotEqual((nuint)0, before.Value.ProcessMask & before.Value.SystemMask);
+            Assert.True(before.Outcome.Ok, $"0x{before.Outcome.HResult:X8}");
+            Assert.NotEqual((nuint)0, before.Info.SystemMask);
+            Assert.NotEqual((nuint)0, before.Info.ProcessMask & before.Info.SystemMask);
 
             // The lowest CPU the process may use, on its own.
-            var single = before.Value.ProcessMask & (nuint)(-(nint)before.Value.ProcessMask);
+            var single = before.Info.ProcessMask & (nuint)(-(nint)before.Info.ProcessMask);
             var set = actions.SetAffinity(id, single);
 
             Assert.True(set.Ok, $"0x{set.HResult:X8}");
-            Assert.Equal(single, actions.GetAffinity(id)?.ProcessMask);
+            var after = actions.GetAffinity(id);
+            Assert.True(after.Outcome.Ok);
+            Assert.Equal(single, after.Info.ProcessMask);
         }
         finally { Kill(child); }
     }
@@ -224,9 +226,9 @@ public class ProcessActionsTests
             var actions = new ProcessActions();
             var id = IdOf(child);
             var reused = id with { CreateTime = id.CreateTime + 1 };
-            var before = actions.GetAffinity(id)!.Value;
+            var before = actions.GetAffinity(id);
 
-            Assert.Null(actions.GetAffinity(reused));
+            Assert.True(actions.GetAffinity(reused).Outcome.IsGone);
             Assert.True(actions.SetAffinity(reused, 1).IsGone);
             Assert.Equal(before, actions.GetAffinity(id));
 
@@ -235,7 +237,10 @@ public class ProcessActionsTests
                 var refused = actions.SetAffinity(new ProcessIdentity(pid, 1), 1);
                 Assert.True(refused.IsInvalidArg);
                 Assert.True(refused.ShowDialog);
-                Assert.Null(actions.GetAffinity(new ProcessIdentity(pid, 1)));
+                var read = actions.GetAffinity(new ProcessIdentity(pid, 1)).Outcome;
+                Assert.True(read.IsInvalidArg);
+                Assert.True(read.ShowDialog);
+                Assert.False(read.IsGone);
             }
         }
         finally { Kill(child); }

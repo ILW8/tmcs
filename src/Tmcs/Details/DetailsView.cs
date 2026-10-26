@@ -575,11 +575,10 @@ internal sealed class DetailsView : UserControl, ICellSource
         if (selection.Count != 1) return;
         var row = selection[0];
 
-        if (_actions.GetAffinity(row.Id) is not { } info)
+        var (read, info) = _actions.GetAffinity(row.Id);
+        if (!read.Ok)
         {
-            // A null carries no error. Opening a process for query fails for lack of access in practice, and Task Manager words
-            // that case as access denied.
-            ShowError(ErrorKind.Affinity, new ActionOutcome(ActionOutcome.EAccessDenied, ShowDialog: true), _actions.IsElevated);
+            if (!read.IsGone && read.ShowDialog) ShowError(ErrorKind.Affinity, read, _actions.IsElevated);
             return;
         }
 

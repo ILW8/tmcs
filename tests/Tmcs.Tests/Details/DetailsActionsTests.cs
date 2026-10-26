@@ -469,13 +469,32 @@ public partial class DetailsActionsTests
     });
 
     [Fact]
-    public void Affinity_that_cannot_be_read_shows_the_error_without_the_dialog() => Sta.Run(() =>
+    public void Affinity_that_cannot_be_read_shows_its_error_without_the_dialog() => Sta.Run(() =>
     {
-        using var rig = new Rig(); // the fake has no affinity for PID 3: GetAffinity is null
+        using var rig = new Rig();
+        var denied = new ActionOutcome(ActionOutcome.EAccessDenied, ShowDialog: true);
+        var invalid = new ActionOutcome(ActionOutcome.EInvalidArg, ShowDialog: true);
+        rig.Actions.AffinityReadOutcomes[3] = denied;
+        rig.Actions.AffinityReadOutcomes[2] = invalid;
+        rig.Actions.IsElevated = true;
+
+        rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(3)]);
+        rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(2)]);
+
+        Assert.Equal([(ErrorKind.Affinity, denied, true), (ErrorKind.Affinity, invalid, true)], rig.Errors);
+        Assert.Empty(rig.AffinityAsks);
+        Assert.Empty(rig.Actions.AffinitySets);
+    });
+
+    [Fact]
+    public void A_process_gone_at_the_read_shows_no_dialog_and_no_error() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Actions.AffinityReadOutcomes[3] = ActionOutcome.Gone;
 
         rig.View.OnRowCommand(CommandIds.SetAffinity, [rig.Row(3)]);
 
-        Assert.Equal([(ErrorKind.Affinity, new ActionOutcome(ActionOutcome.EAccessDenied, ShowDialog: true), false)], rig.Errors);
+        Assert.Empty(rig.Errors);
         Assert.Empty(rig.AffinityAsks);
         Assert.Empty(rig.Actions.AffinitySets);
     });

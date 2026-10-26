@@ -35,3 +35,6 @@ internal readonly record struct PrioritySet(ActionOutcome Outcome, bool ReadBack
 
 /// <summary>A process's affinity mask and the system's, as <c>GetProcessAffinityMask</c> returns them.</summary>
 internal readonly record struct AffinityInfo(nuint ProcessMask, nuint SystemMask);
+
+/// <summary>The result of reading a process's affinity. <see cref="Info"/> is meaningful only when the <see cref="Outcome"/> is <see cref="ActionOutcome.Ok"/>.</summary>
+internal readonly record struct AffinityRead(ActionOutcome Outcome, AffinityInfo Info);

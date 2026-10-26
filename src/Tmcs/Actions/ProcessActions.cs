@@ -112,15 +112,23 @@ internal sealed unsafe class ProcessActions : IProcessActions
         }
     }
 
-    public AffinityInfo? GetAffinity(ProcessIdentity id)
+    public AffinityRead GetAffinity(ProcessIdentity id)
     {
-        if (id.Pid is 0 or 1 or 4 or 5) return null;
+        if (id.Pid is 0 or 1 or 4 or 5) return new(NotValidForThisProcess, default);
 
-        var process = OpenSameProcess(id, Kernel32.ProcessQueryLimitedInformation);
-        if (process == 0) return null;
+        var process = Kernel32.OpenProcess(Kernel32.ProcessQueryLimitedInformation, false, id.Pid);
+        if (process == 0)
+        {
+            var openError = Marshal.GetLastPInvokeError();
+            return new(openError == ErrorInvalidParameter ? ActionOutcome.Gone : new(LastErrorHResult(openError), ShowDialog: true), default);
+        }
         try
         {
-            return Kernel32.GetProcessAffinityMask(process, out var processMask, out var systemMask) ? new AffinityInfo(processMask, systemMask) : null;
+            if (!IsSameProcess(process, id)) return new(ActionOutcome.Gone, default);
+
+            return Kernel32.GetProcessAffinityMask(process, out var processMask, out var systemMask)
+                ? new(ActionOutcome.Success, new AffinityInfo(processMask, systemMask))
+                : new(new(LastErrorHResult(Marshal.GetLastPInvokeError()), ShowDialog: true), default);
         }
         finally
         {
