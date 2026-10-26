@@ -246,6 +246,33 @@ public class ProcessActionsTests
         finally { Kill(child); }
     }
 
+    // Ruling R-S: the refused PIDs get the "not valid for this process" dialog, never the silent gone outcome. The refusal returns
+    // before OpenProcess, so no real process is touched.
+    [Fact]
+    public void Set_priority_refuses_a_kernel_pid_with_the_dialog()
+    {
+        var outcome = new ProcessActions().SetPriority(new(4, 0), ProcessPriority.Low).Outcome;
+
+        Assert.True(outcome.IsInvalidArg);
+        Assert.True(outcome.ShowDialog);
+        Assert.False(outcome.IsGone);
+    }
+
+    // The refusal comes before any descendant is ended: the rows hold only made-up PIDs, which nothing may be called on.
+    [Fact]
+    public void End_process_tree_refuses_a_kernel_pid_before_any_descendant()
+    {
+        var rows = new List<ProcessRow> { new(new(4, 0), "System", 0, ProcessStaticInfo.Blank), new(new(700, 100), "child", 4, ProcessStaticInfo.Blank) };
+        var fake = new FakeProcessActions();
+
+        var outcome = fake.EndProcessTree(new(4, 0), rows);
+
+        Assert.Equal([(nameof(FakeProcessActions.EndProcessTree), new ProcessIdentity(4, 0))], fake.Calls);
+        Assert.True(outcome.IsInvalidArg);
+        Assert.True(outcome.ShowDialog);
+        Assert.False(outcome.IsGone);
+    }
+
     [Fact]
     public void Set_priority_refuses_a_reused_pid()
     {

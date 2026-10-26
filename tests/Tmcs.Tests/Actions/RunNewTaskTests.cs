@@ -43,7 +43,7 @@ public class RunNewTaskTests
     }
 
     [Fact]
-    public void Notify_reads_the_payload_at_the_confirmed_offsets()
+    public void Notify_reads_the_payload_at_the_reference_offsets()
     {
         var calls = new List<(string Command, string? Directory, uint Flags)>();
         var result = WithLauncher((c, d, f) =>
@@ -98,18 +98,6 @@ public class RunNewTaskTests
             return true;
         }, () => RunNewTask.HandleRunNotify(0)));
         Assert.Equal(0, calls);
-    }
-
-    // Used only by the direct start, when wdc.dll is missing; no test reaches the start itself.
-    [Theory]
-    [InlineData("notepad", "notepad", "")]
-    [InlineData("  notepad   notes.txt ", "notepad", "notes.txt")]
-    [InlineData("\"C:\\Program Files\\App\\app.exe\" -a \"b c\"", "C:\\Program Files\\App\\app.exe", "-a \"b c\"")]
-    [InlineData("\"C:\\unclosed quote", "C:\\unclosed quote", "")]
-    [InlineData("   ", "", "")]
-    public void Command_splits_into_program_and_arguments(string command, string file, string arguments)
-    {
-        Assert.Equal((file, arguments), RunNewTask.SplitCommand(command));
     }
 
     /// <summary>Runs <paramref name="body"/> with <paramref name="launcher"/> in place of the real one, then puts the real one back.</summary>

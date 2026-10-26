@@ -6,7 +6,7 @@ namespace Tmcs.Actions;
 
 /// <summary>
 /// File ▸ Run new task (reference 2): the shell's own Run dialog, called as Task Manager calls it, on a thread of its own. When its
-/// admin box is checked the shell starts the command itself. Otherwise it sends the owner a <c>WM_NOTIFY</c> with
+/// admin box is checked, or it has none, the shell starts the command itself. Otherwise it sends the owner a <c>WM_NOTIFY</c> with
 /// <see cref="RunNotifyCode"/>, and <see cref="HandleRunNotify"/> starts the command and tells the dialog whether to close.
 /// </summary>
 internal static unsafe class RunNewTask
@@ -39,12 +39,14 @@ internal static unsafe class RunNewTask
     internal static Func<string, string?, uint, bool> Launcher { get; set; } = Launch;
 
     /// <summary>
-    /// Shows the Run dialog owned by <paramref name="owner"/>, with <paramref name="icon"/>, and returns at once: the dialog runs on
-    /// a new single-threaded-apartment thread, as Task Manager's does, and the UI thread keeps running while it is open.
+    /// Shows the Run dialog owned by <paramref name="owner"/>, with a copy of <paramref name="icon"/>, and returns at once: the dialog
+    /// runs on a new single-threaded-apartment thread, as Task Manager's does, and the UI thread keeps running while it is open. The
+    /// dialog owns the copy, so the caller's icon may be destroyed while the dialog is still open.
     /// </summary>
     public static void Show(nint owner, nint icon)
     {
-        var args = DialogArgs.Create(owner, icon, Environment.CurrentDirectory, CurrentFlags());
+        var copy = icon == 0 ? 0 : User32.CopyIcon(icon);
+        var args = DialogArgs.Create(owner, copy, Environment.CurrentDirectory, CurrentFlags());
         if (!ShlwApi.ShCreateThread(&DialogThread, args, ShlwApi.CtfCoInitSta, null)) DialogArgs.Free(args);
     }
 
@@ -91,42 +93,12 @@ internal static unsafe class RunNewTask
     internal static bool IsRunNotify(nint lParam) => lParam != 0 && ((User32.NmHdr*)lParam)->Code == RunNotifyCode;
 
     /// <summary>
-    /// The real launcher. The dialog's DWORD is not passed on (ruling R12): wdc.dll always gets flags 0. Without wdc.dll the command
-    /// is started directly, which runs it at tmcs's own level.
+    /// The real launcher. The dialog's DWORD is not passed on (ruling R12): wdc.dll always gets flags 0. Without wdc.dll it starts
+    /// nothing and returns false, which keeps the dialog open; the request never comes then anyway, because the dialog has no admin
+    /// box without wdc.dll (<see cref="ComputeFlags"/>), and without the box the shell starts the command itself.
     /// </summary>
     private static bool Launch(string command, string? directory, uint dialogFlags) =>
-        WdcLauncher.IsAvailable ? WdcLauncher.Run(command, directory) >= 0 : StartDirectly(command, directory);
-
-    /// <summary>Starts <paramref name="command"/> through the shell, its program and arguments split as the shell splits them.</summary>
-    private static bool StartDirectly(string command, string? directory)
-    {
-        var (file, arguments) = SplitCommand(command);
-        if (file.Length == 0) return false;
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo(file, arguments) { UseShellExecute = true, WorkingDirectory = directory ?? "" });
-            return true;
-        }
-        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            Debug.WriteLine(e);
-            return false;
-        }
-    }
-
-    /// <summary>The program and the arguments of a command line: a quoted first token, or everything up to the first space.</summary>
-    internal static (string File, string Arguments) SplitCommand(string command)
-    {
-        var text = command.Trim();
-        if (text.StartsWith('"'))
-        {
-            var close = text.IndexOf('"', 1);
-            return close < 0 ? (text[1..], "") : (text[1..close], text[(close + 1)..].TrimStart());
-        }
-
-        var space = text.IndexOf(' ');
-        return space < 0 ? (text, "") : (text[..space], text[(space + 1)..].TrimStart());
-    }
+        WdcLauncher.IsAvailable && WdcLauncher.Run(command, directory) >= 0;
 
     private static uint CurrentFlags()
     {
@@ -161,6 +133,7 @@ internal static unsafe class RunNewTask
     /// <summary>
     /// What the dialog thread needs, in one native block that outlives <see cref="Show"/>: the dialog thread frees it once the
     /// dialog has closed, or <see cref="Show"/> does if the thread could not start. The directory follows the fields, zero-terminated.
+    /// <see cref="Icon"/> is the dialog's own copy, destroyed with the block.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     private struct DialogArgs
@@ -181,6 +154,12 @@ internal static unsafe class RunNewTask
             return args;
         }
 
-        public static void Free(void* args) => NativeMemory.Free(args);
+        /// <summary>Destroys the icon copy, then frees the block.</summary>
+        public static void Free(void* args)
+        {
+            var icon = ((DialogArgs*)args)->Icon;
+            if (icon != 0) User32.DestroyIcon(icon);
+            NativeMemory.Free(args);
+        }
     }
 }

@@ -14,10 +14,16 @@ internal readonly record struct ActionOutcome(int HResult, bool ShowDialog)
 
     /// <summary>
     /// The process is gone: it can't be opened because it exited, or its PID now belongs to a process with another creation time.
-    /// Shown like any E_INVALIDARG ("The operation is not valid for this process."), except where a caller skips it on purpose
-    /// (<see cref="ProcessTree.EndEach"/> for a descendant).
+    /// It carries E_INVALIDARG with <see cref="ShowDialog"/> set, but no caller shows it: the Details view skips a gone process
+    /// silently for every action, and <see cref="ProcessTree.EndEach"/> skips a gone descendant.
     /// </summary>
     public static ActionOutcome Gone => new(EInvalidArg, ShowDialog: true) { IsGone = true };
+
+    /// <summary>37226 "The operation is not valid for this process.": the answer for a PID Task Manager refuses outright (<see cref="IsRefusedPid"/>).</summary>
+    public static ActionOutcome NotValidForThisProcess => new(EInvalidArg, ShowDialog: true);
+
+    /// <summary>The idle process, System and the other kernel-made PIDs, which Task Manager refuses before opening anything (reference 3.2 step 1).</summary>
+    public static bool IsRefusedPid(int pid) => pid is 0 or 1 or 4 or 5;
 
     /// <summary>Set only by <see cref="Gone"/>.</summary>
     public bool IsGone { get; init; }

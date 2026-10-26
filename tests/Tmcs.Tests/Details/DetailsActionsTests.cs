@@ -191,18 +191,19 @@ public partial class DetailsActionsTests
         Assert.Equal([(ConfirmKind.EndTask, 2, null, false, null)], rig.Confirms);
         Assert.Equal([rig.Row(2).Id, rig.Row(1).Id], rig.Ended);
 
-        // End process tree: one call per selected root, each given the table's live rows to find its descendants in.
+        // End process tree: one call per selected root, each given the table's live rows to find its descendants in. The roots are
+        // 2 and 3: a root with PID 1 would be refused before anything is ended (reference 3.2 step 1).
         rig.Snapshot.Add(new RawProcess(4, 2, 500, "child.exe", 0, 0, 0, 0, 1, 1, 1, 8, false));
         rig.Table.Apply(rig.Snapshot, 20_000_000);
         rig.Actions.Calls.Clear();
         rig.Confirms.Clear();
 
-        rig.View.OnRowCommand(CommandIds.EndProcessTree, [rig.Row(2), rig.Row(1)]);
+        rig.View.OnRowCommand(CommandIds.EndProcessTree, [rig.Row(2), rig.Row(3)]);
 
         Assert.Equal([(ConfirmKind.EndProcessTree, 2, null, false, null)], rig.Confirms);
         Assert.Equal(
-            [("IsCritical", rig.Row(2).Id), ("IsCritical", rig.Row(1).Id), ("EndProcessTree", rig.Row(2).Id), ("EndTask", rig.Row(4).Id), ("EndTask", rig.Row(2).Id),
-                ("EndProcessTree", rig.Row(1).Id), ("EndTask", rig.Row(1).Id)],
+            [("IsCritical", rig.Row(2).Id), ("IsCritical", rig.Row(3).Id), ("EndProcessTree", rig.Row(2).Id), ("EndTask", rig.Row(4).Id), ("EndTask", rig.Row(2).Id),
+                ("EndProcessTree", rig.Row(3).Id), ("EndTask", rig.Row(3).Id)],
             rig.Actions.Calls);
 
         // Cancel ends nothing.

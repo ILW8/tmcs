@@ -28,9 +28,6 @@ internal sealed unsafe class ProcessActions : IProcessActions
 
     const int ErrorInvalidParameter = 87;
 
-    // 37226 "The operation is not valid for this process.": a PID Task Manager refuses outright.
-    static readonly ActionOutcome NotValidForThisProcess = new(ActionOutcome.EInvalidArg, ShowDialog: true);
-
     // The handle list is read into a buffer that grows until it fits. Past the maximum, the answer is treated as garbage.
     const uint FirstHandleBufferBytes = 16 * 1024;
     const uint MaxHandleBufferBytes = 64 << 20;
@@ -50,7 +47,7 @@ internal sealed unsafe class ProcessActions : IProcessActions
     public ActionOutcome EndTask(ProcessIdentity id)
     {
         // Task Manager refuses the idle process, System and the other kernel-made PIDs before opening anything (reference 3.2 step 1).
-        if (id.Pid is 0 or 1 or 4 or 5) return NotValidForThisProcess;
+        if (ActionOutcome.IsRefusedPid(id.Pid)) return ActionOutcome.NotValidForThisProcess;
 
         var process = Kernel32.OpenProcess(EndTaskAccess, false, id.Pid);
         if (process == 0)
@@ -85,7 +82,7 @@ internal sealed unsafe class ProcessActions : IProcessActions
     public PrioritySet SetPriority(ProcessIdentity id, ProcessPriority priority)
     {
         // The same refusal as End task: these PIDs are not processes that can be opened (reference 3.2 step 1).
-        if (id.Pid is 0 or 1 or 4 or 5) return new(NotValidForThisProcess, false);
+        if (ActionOutcome.IsRefusedPid(id.Pid)) return new(ActionOutcome.NotValidForThisProcess, false);
 
         var process = Kernel32.OpenProcess(SetPriorityAccess, false, id.Pid);
         if (process == 0)
@@ -114,7 +111,7 @@ internal sealed unsafe class ProcessActions : IProcessActions
 
     public AffinityRead GetAffinity(ProcessIdentity id)
     {
-        if (id.Pid is 0 or 1 or 4 or 5) return new(NotValidForThisProcess, default);
+        if (ActionOutcome.IsRefusedPid(id.Pid)) return new(ActionOutcome.NotValidForThisProcess, default);
 
         var process = Kernel32.OpenProcess(Kernel32.ProcessQueryLimitedInformation, false, id.Pid);
         if (process == 0)
@@ -138,7 +135,7 @@ internal sealed unsafe class ProcessActions : IProcessActions
 
     public ActionOutcome SetAffinity(ProcessIdentity id, nuint mask)
     {
-        if (id.Pid is 0 or 1 or 4 or 5) return NotValidForThisProcess;
+        if (ActionOutcome.IsRefusedPid(id.Pid)) return ActionOutcome.NotValidForThisProcess;
 
         var process = Kernel32.OpenProcess(SetAffinityAccess, false, id.Pid);
         if (process == 0)

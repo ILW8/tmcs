@@ -43,6 +43,47 @@ public class ProcessTreeTests
     }
 
     [Fact]
+    public void A_root_whose_pid_was_reused_is_not_expanded()
+    {
+        // The root R (10, t=100) exited after it was captured. PID 10 now belongs to P' (t=200), whose child C (t=300) names 10 as
+        // its parent and started after R did. C is P''s child, not R's, so only R is in the tree.
+        var root = new ProcessIdentity(10, 100);
+        var rows = new[] { Row(10, 200, 1), Row(11, 300, 10) };
+
+        Assert.Equal([root], ProcessTree.OrderForEnding(root, rows));
+    }
+
+    [Fact]
+    public void A_root_missing_from_the_rows_is_not_expanded()
+    {
+        // R (10, t=100) has no row at all, so a row naming 10 as its parent can't be shown to be R's child.
+        var root = new ProcessIdentity(10, 100);
+        var rows = new[] { Row(11, 300, 10) };
+
+        Assert.Equal([root], ProcessTree.OrderForEnding(root, rows));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void A_refused_root_ends_nothing(int pid)
+    {
+        // Task Manager refuses these PIDs before anything is opened (reference 3.2 step 1), so no descendant is ended either.
+        var root = Row(pid, 0, 0);
+        var rows = new[] { root, Row(700, 100, pid), Row(701, 200, 700) };
+        var ended = new List<ProcessIdentity>();
+
+        var result = ProcessTree.EndEach(root.Id, rows, id => { ended.Add(id); return ActionOutcome.Success; });
+
+        Assert.Empty(ended);
+        Assert.True(result.IsInvalidArg);
+        Assert.True(result.ShowDialog);
+        Assert.False(result.IsGone);
+    }
+
+    [Fact]
     public void A_gone_descendant_is_skipped_but_a_failed_root_is_not()
     {
         // 10 ─┬─ 20 (gone since the snapshot)

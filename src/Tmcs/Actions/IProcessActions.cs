@@ -19,7 +19,9 @@ internal interface IProcessActions
 
     /// <summary>
     /// Ends the process and its descendants in <paramref name="snapshot"/>, each descendant before its parent
-    /// (<see cref="ProcessTree.OrderForEnding"/>). The outcome is the first one that needs a dialog, else Success.
+    /// (<see cref="ProcessTree.OrderForEnding"/>). A descendant that is gone (it exited, or its PID was reused) is skipped silently.
+    /// A refused PID (0, 1, 4 or 5) is refused before any descendant is ended. The outcome is the first one that needs a dialog,
+    /// else Success (<see cref="ProcessTree.EndEach"/>).
     /// </summary>
     ActionOutcome EndProcessTree(ProcessIdentity id, IReadOnlyList<ProcessRow> snapshot);
 
