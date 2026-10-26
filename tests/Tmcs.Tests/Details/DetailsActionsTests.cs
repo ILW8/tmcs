@@ -12,7 +12,7 @@ using Tmcs.Ui;
 namespace Tmcs.Tests.Details;
 
 // No test here opens the row menu or a dialog, or ends a real process: the rig replaces DetailsView's TrackRowMenu, Confirm,
-// ChooseAffinity, ShowError and ShowNotice with recorders, and its actions are a FakeProcessActions.
+// ChooseAffinity, OpenLocation, ShowProperties, CopyText, ShowError and ShowNotice with recorders, and its actions are a FakeProcessActions.
 public partial class DetailsActionsTests
 {
     // Values the tests check are written out here rather than taken from production code, so a wrong constant shows up.
@@ -517,6 +517,67 @@ public partial class DetailsActionsTests
     });
 
     [Fact]
+    public void Copy_pid_copies_the_decimal_pid() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+
+        rig.View.OnRowCommand(CommandIds.CopyPid, [rig.Row(2)]);
+        rig.View.OnRowCommand(CommandIds.CopyPid, [rig.Row(1), rig.Row(3)]); // the menu grays Copy for several rows
+
+        Assert.Equal(["2"], rig.Copied);
+    });
+
+    [Fact]
+    public void Copy_pid_ignores_the_culture() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        CultureInfo.CurrentCulture = new CultureInfo("ar-SA"); // digits that are not 0-9 in some cultures
+
+        rig.View.OnRowCommand(CommandIds.CopyPid, [rig.Row(3)]);
+
+        Assert.Equal(["3"], rig.Copied);
+    });
+
+    [Fact]
+    public void Copy_image_path_copies_the_path() => Sta.Run(() =>
+    {
+        using var rig = new Rig(noPath: [3]);
+
+        rig.View.OnRowCommand(CommandIds.CopyImagePath, [rig.Row(2)]);
+        rig.View.OnRowCommand(CommandIds.CopyImagePath, [rig.Row(3)]); // no path: nothing to copy
+        rig.View.OnRowCommand(CommandIds.CopyImagePath, [rig.Row(1), rig.Row(2)]);
+
+        Assert.Equal(["C:\\x\\2"], rig.Copied);
+    });
+
+    [Fact]
+    public void Copy_image_path_is_grayed_without_a_path() => Sta.Run(() =>
+    {
+        using var rig = new Rig(noPath: [2]);
+
+        using (var menu = rig.View.PrepareRowMenu([rig.Row(2)]))
+            Assert.Equal([true, false], Enabled(GetSubMenu(menu.Handle, 8))); // PID stays; the path is missing
+        using (var menu = rig.View.PrepareRowMenu([rig.Row(3)]))
+            Assert.Equal([true, true], Enabled(GetSubMenu(menu.Handle, 8)));
+    });
+
+    [Fact]
+    public void Open_location_and_properties_use_the_image_path() => Sta.Run(() =>
+    {
+        using var rig = new Rig(noPath: [3]);
+
+        rig.View.OnRowCommand(CommandIds.OpenFileLocation, [rig.Row(2)]);
+        rig.View.OnRowCommand(CommandIds.Properties, [rig.Row(2)]);
+        rig.View.OnRowCommand(CommandIds.OpenFileLocation, [rig.Row(3)]); // grayed in the menu; no path, no call
+        rig.View.OnRowCommand(CommandIds.Properties, [rig.Row(3)]);
+        rig.View.OnRowCommand(CommandIds.OpenFileLocation, [rig.Row(1), rig.Row(2)]); // several rows: grayed
+        rig.View.OnRowCommand(CommandIds.Properties, [rig.Row(1), rig.Row(2)]);
+
+        Assert.Equal(["C:\\x\\2"], rig.Opened);
+        Assert.Equal(["C:\\x\\2"], rig.PropertiesShown);
+    });
+
+    [Fact]
     public void Thousand_menu_open_and_cancel_stay_flat() => Sta.Run(() =>
     {
         using var rig = new Rig();
@@ -593,6 +654,9 @@ public partial class DetailsActionsTests
         public readonly List<(ConfirmKind Kind, int Count, string? SingleName, bool Critical, string? CriticalName)> Confirms = [];
         public readonly List<(ErrorKind Kind, ActionOutcome Outcome, bool IsElevated)> Errors = [];
         public readonly List<(string Title, string Body)> Notices = [];
+        public readonly List<string> Opened = [];
+        public readonly List<string> PropertiesShown = [];
+        public readonly List<string> Copied = [];
         public bool ConfirmAnswer = true;
         public readonly List<(string Name, AffinityInfo Info)> AffinityAsks = [];
 
@@ -631,6 +695,9 @@ public partial class DetailsActionsTests
             };
             View.ShowError = (kind, outcome, isElevated) => Errors.Add((kind, outcome, isElevated));
             View.ShowNotice = (title, body) => Notices.Add((title, body));
+            View.OpenLocation = Opened.Add;
+            View.ShowProperties = PropertiesShown.Add;
+            View.CopyText = Copied.Add;
             _form.Controls.Add(View);
             _form.ShowOffscreen();
             View.RefreshRows();

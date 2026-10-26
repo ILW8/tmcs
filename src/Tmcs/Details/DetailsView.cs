@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using Tmcs.Actions;
 using Tmcs.Icons;
 using Tmcs.Native;
@@ -103,6 +104,9 @@ internal sealed class DetailsView : UserControl, ICellSource
         };
         ShowError = (kind, outcome, isElevated) => ErrorDialog.Show(DialogOwner, kind, outcome, isElevated);
         ShowNotice = (title, body) => ErrorDialog.ShowNotice(DialogOwner, title, body);
+        OpenLocation = ShellActions.OpenFileLocation;
+        ShowProperties = path => ShellActions.ShowProperties((FindForm() ?? (Control)this).Handle, path);
+        CopyText = ShellActions.CopyText;
 
         ApplyColumnSettings();
     }
@@ -146,6 +150,18 @@ internal sealed class DetailsView : UserControl, ICellSource
     /// <summary>Shows a notice in the error dialog's form, given its title and text. Tests replace it so no dialog opens.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action<string, string> ShowNotice { get; set; }
+
+    /// <summary>Opens Explorer on the folder of an image path and selects the file. Tests replace it so no window opens.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string> OpenLocation { get; set; }
+
+    /// <summary>Shows the shell's Properties window for an image path, owned by this view's window. Tests replace it so no window opens.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string> ShowProperties { get; set; }
+
+    /// <summary>Puts text on the clipboard. Tests replace it so the owner's clipboard is not written.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string> CopyText { get; set; }
 
     /// <summary>The End task button below the list, enabled while a row is selected.</summary>
     internal Button EndTaskButton => _endTask;
@@ -413,11 +429,20 @@ internal sealed class DetailsView : UserControl, ICellSource
                 throw;
             }
 
-            menu.AddItem("Set a&ffinity", CommandIds.SetAffinity)
-                .AddSeparator()
-                .AddItem("&Open file location", CommandIds.OpenFileLocation)
-                .AddItem("P&roperties", CommandIds.Properties)
-                .AddPopup("&Copy", NativeMenu.Popup(("&PID", CommandIds.CopyPid), ("&Image path", CommandIds.CopyImagePath)));
+            var copy = NativeMenu.Popup(("&PID", CommandIds.CopyPid), ("&Image path", CommandIds.CopyImagePath));
+            try
+            {
+                menu.AddItem("Set a&ffinity", CommandIds.SetAffinity)
+                    .AddSeparator()
+                    .AddItem("&Open file location", CommandIds.OpenFileLocation)
+                    .AddItem("P&roperties", CommandIds.Properties)
+                    .AddPopup("&Copy", copy);
+            }
+            catch
+            {
+                copy.Dispose(); // not yet owned by the row menu
+                throw;
+            }
 
             // End task and End process tree act on every selected row; the rest act on one row, and the shell's items need its file.
             var single = selection.Count == 1;
@@ -427,6 +452,7 @@ internal sealed class DetailsView : UserControl, ICellSource
             menu.SetEnabled(CommandIds.OpenFileLocation, hasFile);
             menu.SetEnabled(CommandIds.Properties, hasFile);
             menu.SetEnabledAt(CopyPosition, single);
+            copy.SetEnabled(CommandIds.CopyImagePath, hasFile);
 
             // The radio mark shows the one row's class, read from its base priority. A value no class reports marks nothing.
             if (single && ProcessPriorities.FromBasePriority(selection[0].BasePriority) is { } current)
@@ -461,9 +487,25 @@ internal sealed class DetailsView : UserControl, ICellSource
             case CommandIds.SetAffinity:
                 SetAffinity(selection);
                 break;
-            // Open file location, Properties and Copy do nothing yet.
+            case CommandIds.OpenFileLocation:
+                if (ImagePathOf(selection) is { } openPath) OpenLocation(openPath);
+                break;
+            case CommandIds.Properties:
+                if (ImagePathOf(selection) is { } propertiesPath) ShowProperties(propertiesPath);
+                break;
+            case CommandIds.CopyPid:
+                // Digits 0-9 whatever the culture.
+                if (selection.Count == 1) CopyText(selection[0].Id.Pid.ToString(CultureInfo.InvariantCulture));
+                break;
+            case CommandIds.CopyImagePath:
+                if (ImagePathOf(selection) is { } copyPath) CopyText(copyPath);
+                break;
         }
     }
+
+    /// <summary>The image path of the one selected row, or null for any other selection or a row without a path. The menu grays those commands.</summary>
+    private static string? ImagePathOf(IReadOnlyList<ProcessRow> selection) =>
+        selection is [{ Info.ImagePath: { Length: > 0 } path }] ? path : null;
 
     /// <summary>
     /// Delete ends the selection, as End task does. A <see cref="UserControl"/> has no KeyPreview, but this runs while the list has
