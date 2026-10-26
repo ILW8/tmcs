@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Captures the stock Task Manager's Performance tab as the reference for tmcs's copy of it.
+    Captures the stock Task Manager's Performance tab, or with -Details its Details tab, as the reference for tmcs's copy of it.
 .DESCRIPTION
     Run it elevated: Task Manager runs elevated, and Windows hides an elevated window's contents from a non-elevated script.
     Task Manager must be open and not minimized; it may sit behind other windows. The script reads and drives Task Manager
@@ -16,10 +16,15 @@
     It never moves the mouse, sends keystrokes or activates a window. Selecting a tab or pane does change what Task Manager
     shows. Everything goes to -OutDir, with a log.txt. The captures show Microsoft's UI: reference only, never commit them
     (artifacts/ is git-ignored).
+    -Details captures the Details tab instead: it selects that tab, saves details.png and details.txt (the accessibility tree
+    with each element's bounds relative to the window; the bottom band and the End task button are in it), and selects the original
+    tab again. The Performance panes and counters are skipped. See docs/superpowers/reference/2026-10-26-taskmgr-details-button.md.
     -Only limits the captures to some sidebar entries. -WindowHandle points it at another window instead, for a dry run: tree
     dump and capture only, nothing selected.
 .EXAMPLE
     Start-Process pwsh -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', "$PWD\tools\capture-taskmgr.ps1", '-OutDir', "$PWD\artifacts\reference\taskmgr"
+.EXAMPLE
+    Start-Process pwsh -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', "$PWD\tools\capture-taskmgr.ps1", '-OutDir', "$PWD\artifacts\reference\taskmgr", '-Details'
 #>
 [CmdletBinding()]
 param(
@@ -35,7 +40,10 @@ param(
     # Captures only the sidebar entries whose "title sub" label matches this regex, for example 'GPU'.
     [string] $Only = '',
 
-    [long] $WindowHandle = 0
+    [long] $WindowHandle = 0,
+
+    # Captures the Details tab (details.png, details.txt) instead of the Performance tab's panes.
+    [switch] $Details
 )
 
 Set-StrictMode -Version Latest
@@ -249,6 +257,26 @@ function Save-Pane([int] $index, [string] $name) {
     Write-Log "saved $base.png / .txt"
 }
 
+# The Details tab: selects it, lets it settle, and saves details.png and details.txt. The tab's bottom band and End task button
+# are in the tree; the button's rectangle is logged as well.
+function Save-Details($tabs) {
+    $tab = $tabs | Where-Object { $_.Name -eq 'Details' } | Select-Object -First 1
+    if (-not $tab) { throw 'No Details tab found; see tree-start.txt.' }
+    if (-not $tab.Selected) {
+        if (-not (Select-Node $tab 'Details tab')) { throw 'Stopped: the Details tab could not be selected.' }
+        Start-Sleep -Milliseconds $SettleMs
+    }
+    $nodes = @(Get-Nodes)
+    $err = Save-WindowImage (Join-Path $OutDir 'details.png')
+    if ($err) { Write-Failure "capture of the Details tab: $err" }
+    Save-Tree $nodes (Join-Path $OutDir 'details.txt')
+    Write-Log "saved $OutDir\details.png / details.txt"
+    $r = Get-WindowRect
+    $button = $nodes | Where-Object { $_.Role -eq 'push button' -and $_.Name -match 'End task' } | Select-Object -First 1
+    if ($button) { Write-Log ('End task button: {0},{1},{2},{3} (window-relative, physical pixels)' -f ($button.X - $r.Left), ($button.Y - $r.Top), $button.W, $button.H) }
+    else { Write-Failure 'no End task button in the tree; read details.txt for the band and the button' }
+}
+
 function Select-Node($node, [string] $what) {
     $how = [Msaa]::Select($node, 300)
     if ($how) { Write-Log "selected '$what' through $how"; return $true }
@@ -401,6 +429,12 @@ try {
     $tabs = @($nodes | Where-Object { $_.Role -eq 'page tab' })
     Write-Log "tabs: $(($tabs | ForEach-Object { '{0}{1}' -f $_.Name, $(if ($_.Selected) { '*' } else { '' }) }) -join ', ')"
     $originalTab = $tabs | Where-Object { $_.Selected } | Select-Object -First 1
+    if ($Details) {
+        Save-Details $tabs
+        if ($originalTab -and $originalTab.Name -ne 'Details') { [void](Select-Node $originalTab 'the original tab') }
+        Write-Log "done: $script:Failures failure(s)"
+        exit ([int]($script:Failures -gt 0))
+    }
     $performance = $tabs | Where-Object { $_.Name -eq 'Performance' } | Select-Object -First 1
     if (-not $performance) { throw 'No Performance tab found; see tree-start.txt.' }
     if (-not $performance.Selected) {

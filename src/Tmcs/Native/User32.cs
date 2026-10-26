@@ -58,6 +58,12 @@ internal static partial class User32
     /// <summary><c>LVN_GETDISPINFOW</c>: an owner-data list view asks for an item's text, image or indent. lParam is an <see cref="NmLvDispInfo"/>.</summary>
     public const int LvnGetDispInfoW = -177;
 
+    /// <summary><c>LVN_ITEMCHANGED</c>: an item's state changed, which includes it being selected or deselected.</summary>
+    public const int LvnItemChanged = -101;
+
+    /// <summary><c>LVN_ODSTATECHANGED</c>: the state of a range of items in an owner-data list view changed at once.</summary>
+    public const int LvnOdStateChanged = -115;
+
     /// <summary><c>LVN_ODCACHEHINT</c>: an owner-data list view names the rows it is about to draw. lParam is an <c>NMLVCACHEHINT</c>.</summary>
     public const int LvnOdCacheHint = -113;
 

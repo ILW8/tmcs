@@ -300,7 +300,7 @@ public sealed partial class MainFormTests : IDisposable
         rig.Form.ShowOffscreen();
 
         var details = rig.Form.Details;
-        var list = (ListView)details.Controls.Cast<Control>().Single();
+        var list = details.Controls.OfType<ListView>().Single(); // the End task button sits beside it
         Assert.False(details.Visible);
         Assert.True(list.IsHandleCreated, "the Details list has no window yet");
         Assert.All(rig.Form.PerformanceView.Panes, p => Assert.True(p.IsHandleCreated, $"{p.GetType().Name} has no window yet"));

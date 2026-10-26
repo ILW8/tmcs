@@ -279,6 +279,81 @@ public partial class DetailsActionsTests
     });
 
     [Fact]
+    public void End_task_button_is_disabled_without_a_selection() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+
+        Assert.Equal("&End task", rig.View.EndTaskButton.Text);
+        Assert.False(rig.View.EndTaskButton.Enabled);
+
+        rig.Select(2);
+        Assert.True(rig.View.EndTaskButton.Enabled);
+
+        rig.Select();
+        Assert.False(rig.View.EndTaskButton.Enabled);
+    });
+
+    [Fact]
+    public void End_task_button_is_enabled_with_a_selection() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+
+        rig.Select(2, 3);
+        Assert.True(rig.View.EndTaskButton.Enabled);
+
+        // A refresh that drops the selected process (it exited) leaves nothing selected, so the button follows.
+        rig.Select(2);
+        rig.Snapshot.RemoveAll(p => p.Pid == 2);
+        rig.Table.Apply(rig.Snapshot, 20_000_000);
+        rig.View.RefreshRows();
+        Assert.False(rig.View.EndTaskButton.Enabled);
+    });
+
+    [Fact]
+    public void End_task_button_ends_the_selection() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Select(2, 3);
+
+        rig.View.EndTaskButton.PerformClick();
+
+        Assert.Equal([(ConfirmKind.EndTask, 2, null, false, null)], rig.Confirms);
+        Assert.Equal([rig.Row(2).Id, rig.Row(3).Id], rig.Ended);
+        Assert.Empty(rig.Errors);
+        Assert.Empty(rig.Menus);
+
+        // Cancel ends nothing.
+        rig.Actions.Calls.Clear();
+        rig.ConfirmAnswer = false;
+        rig.View.EndTaskButton.PerformClick();
+        Assert.Empty(rig.Ended);
+    });
+
+    [Fact]
+    public void Button_band_layout_is_scaled() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        var view = rig.View;
+        var button = view.EndTaskButton;
+        var width = view.ClientSize.Width;
+        var height = view.ClientSize.Height;
+
+        // 96-DPI units: a 48 band at the bottom, an End task button 96x28 that is 10 below the band top and 16 off the right edge.
+        view.LayoutBand(96);
+        Assert.Equal(new Rectangle(0, 0, width, height - 48), rig.List.Bounds);
+        Assert.Equal(new Rectangle(width - 16 - 96, height - 48 + 10, 96, 28), button.Bounds);
+
+        view.LayoutBand(192);
+        Assert.Equal(new Rectangle(0, 0, width, height - 96), rig.List.Bounds);
+        Assert.Equal(new Rectangle(width - 32 - 192, height - 96 + 20, 192, 56), button.Bounds);
+
+        // At the control's own DPI, which the layout pass uses.
+        var dpi = view.DeviceDpi;
+        view.PerformLayout();
+        Assert.Equal(height - (int)Math.Round(48 * dpi / 96.0, MidpointRounding.AwayFromZero), rig.List.Height);
+    });
+
+    [Fact]
     public void Thousand_menu_open_and_cancel_stay_flat() => Sta.Run(() =>
     {
         using var rig = new Rig();

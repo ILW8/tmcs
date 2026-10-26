@@ -55,6 +55,12 @@ internal sealed class ProcessListView : ListView
     public event Action<Point>? RowContextMenu;
 
     /// <summary>
+    /// The list's item state changed (a row selected, deselected or focused, or a range of them at once). Raised from the native
+    /// notifications, which WinForms turns into <see cref="ListView.ItemSelectionChanged"/> events that read whole items.
+    /// </summary>
+    public event Action? ItemStateChanged;
+
+    /// <summary>
     /// When set, the list answers the native control's requests for cell text and icons itself, from this source, and its custom
     /// draw and cache hints too: painting then never raises <see cref="ListView.RetrieveVirtualItem"/>, which builds a whole
     /// <see cref="ListViewItem"/> per cell, nor <see cref="ListView.CacheVirtualItems"/>. The WinForms paths that read whole items
@@ -145,6 +151,8 @@ internal sealed class ProcessListView : ListView
         // base, which shows the scrollbar's own menu.
         if (m.Msg == WmContextMenu && m.WParam != 0 && m.WParam == Handle && RaiseRowContextMenu(m.LParam)) return;
 
+        if (m.Msg == User32.WmReflectNotify && m.LParam != 0 && IsItemStateNotify(m.LParam)) ItemStateChanged?.Invoke();
+
         // The list's own notifications, which its parent reflects back here.
         if (m.Msg == User32.WmReflectNotify && m.LParam != 0 && CellSource is { } cells && AnswerNotify(ref m, cells)) return;
 
@@ -153,6 +161,9 @@ internal sealed class ProcessListView : ListView
 
         base.WndProc(ref m);
     }
+
+    private static unsafe bool IsItemStateNotify(nint lParam) =>
+        ((User32.NmHdr*)lParam)->Code is User32.LvnItemChanged or User32.LvnOdStateChanged;
 
     /// <summary>
     /// Answers the notifications that drawing rows sends, so that WinForms, which would raise <see cref="ListView.RetrieveVirtualItem"/>

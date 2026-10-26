@@ -22,11 +22,20 @@ internal sealed class DetailsView : UserControl, ICellSource
     private const int SetPriorityPosition = 3;
     private const int CopyPosition = 8;
 
+    // The bottom band and its End task button, in 96-DPI units (spec 4.2). Not measured from Task Manager: see
+    // docs/superpowers/reference/2026-10-26-taskmgr-details-button.md.
+    private const int BandHeight = 48;
+    private const int ButtonWidth = 96;
+    private const int ButtonHeight = 28;
+    private const int ButtonTop = 10; // below the band's top
+    private const int ButtonRightMargin = 16;
+
     private readonly ProcessTable _table;
     private readonly AppSettings _settings;
     private readonly ProcessListView _list;
     private readonly SelectionKeeper _selection;
     private readonly IProcessActions _actions;
+    private readonly Button _endTask;
 
     /// <summary>The rows on screen, in display order. Reused by every refresh.</summary>
     private readonly List<ProcessRow> _rows = [];
@@ -52,7 +61,7 @@ internal sealed class DetailsView : UserControl, ICellSource
         _table = table;
         _settings = settings;
         _actions = actions;
-        _list = new ProcessListView { Dock = DockStyle.Fill, SharedImageList = images.Handle, CellSource = this };
+        _list = new ProcessListView { SharedImageList = images.Handle, CellSource = this };
         _selection = new SelectionKeeper(_list);
         _list.RetrieveVirtualItem += OnRetrieveVirtualItem;
         _list.SearchForVirtualItem += OnSearchForVirtualItem;
@@ -61,12 +70,19 @@ internal sealed class DetailsView : UserControl, ICellSource
         _list.ColumnWidthChanged += OnColumnWidthChanged;
         _list.HeaderContextMenu += OnHeaderContextMenu;
         _list.RowContextMenu += OnRowContextMenu;
+        _list.ItemStateChanged += UpdateEndTaskButton;
         // The list raises HandleCreated before it inserts its header items, so the arrow goes on once that has finished.
         _list.HandleCreated += (_, _) =>
         {
             if (IsHandleCreated) BeginInvoke(UpdateSortArrow);
         };
+        // &End task (string 38001). It follows the selection and runs the same flow as the row menu's End task.
+        _endTask = new Button { Text = "&End task", Enabled = false, FlatStyle = FlatStyle.System };
+        _endTask.Click += (_, _) => EndSelected();
+        BackColor = SystemColors.Window;
         Controls.Add(_list);
+        Controls.Add(_endTask);
+        LayoutBand(DeviceDpi);
 
         TrackHeaderMenu = (menu, screen) => menu.Track(this, screen);
         ChooseColumns = s =>
@@ -114,6 +130,9 @@ internal sealed class DetailsView : UserControl, ICellSource
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action<ErrorKind, ActionOutcome, bool> ShowError { get; set; }
 
+    /// <summary>The End task button below the list, enabled while a row is selected.</summary>
+    internal Button EndTaskButton => _endTask;
+
     /// <summary>The dialogs' owner: the window this view is in.</summary>
     private IWin32Window DialogOwner => FindForm() ?? (IWin32Window)this;
 
@@ -126,6 +145,7 @@ internal sealed class DetailsView : UserControl, ICellSource
         RowSorter.Sort(_rows, _settings.SortColumn, _settings.SortDescending);
         _list.SetItemCountKeepScroll(_rows.Count);
         _selection.Restore(_rows); // after the count, so rows that moved past the old end can be selected
+        UpdateEndTaskButton();
         _list.Invalidate();
     }
 
@@ -228,6 +248,36 @@ internal sealed class DetailsView : UserControl, ICellSource
         ApplyColumnSettings();
         if (resort) RefreshRows();
         SettingsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Puts the list above a bottom band and the End task button at the band's right, from the 96-DPI values scaled to
+    /// <paramref name="dpi"/>. The list fills what the band leaves.
+    /// </summary>
+    internal void LayoutBand(int dpi)
+    {
+        int Scale(int units) => (int)Math.Round(units * dpi / 96.0, MidpointRounding.AwayFromZero);
+
+        var width = ClientSize.Width;
+        var band = Scale(BandHeight);
+        var top = Math.Max(0, ClientSize.Height - band);
+        SuspendLayout(); // a child's new bounds would otherwise lay this view out again, at its own DPI
+        _list.Bounds = new Rectangle(0, 0, width, top);
+        _endTask.Bounds = new Rectangle(width - Scale(ButtonRightMargin) - Scale(ButtonWidth), top + Scale(ButtonTop), Scale(ButtonWidth), Scale(ButtonHeight));
+        ResumeLayout(false);
+    }
+
+    protected override void OnLayout(LayoutEventArgs e)
+    {
+        base.OnLayout(e);
+        LayoutBand(DeviceDpi);
+    }
+
+    /// <summary>Enables the End task button while at least one row is selected.</summary>
+    private void UpdateEndTaskButton()
+    {
+        var any = _list.IsHandleCreated && User32.SendMessage(_list.Handle, User32.LvmGetSelectedCount, 0, 0) != 0;
+        if (_endTask.Enabled != any) _endTask.Enabled = any;
     }
 
     private int ToPixels(int width) => (int)Math.Round(width * DeviceDpi / 96.0, MidpointRounding.AwayFromZero);
@@ -385,17 +435,18 @@ internal sealed class DetailsView : UserControl, ICellSource
     /// </summary>
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        if (keyData == Keys.Delete)
-        {
-            var selection = SelectedRows();
-            if (selection.Count > 0)
-            {
-                OnRowCommand(CommandIds.EndTask, selection);
-                return true;
-            }
-        }
+        if (keyData == Keys.Delete && EndSelected()) return true;
 
         return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    /// <summary>Ends the selected rows as the row menu's End task does. False, with nothing done, when no row is selected.</summary>
+    private bool EndSelected()
+    {
+        var selection = SelectedRows();
+        if (selection.Count == 0) return false;
+        OnRowCommand(CommandIds.EndTask, selection);
+        return true;
     }
 
     /// <summary>The selected rows, in display order, read from the list's own item state as <see cref="SelectionKeeper"/> reads it.</summary>
