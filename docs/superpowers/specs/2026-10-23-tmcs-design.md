@@ -48,7 +48,7 @@ Anti-goals (it would be a failure even if it technically works)
 - Title "tmcs" and an original app icon (not Task Manager's).
 - Menu bar, copying Task Manager's structure but keeping only these items:
   - **File**: Run new task, Exit.
-  - **Options**: Always on top.
+  - **Options**: Always on top; Linux-style CPU %, an addition the owner asked for on 2026-10-26 (see 4.3).
   - **View**: Refresh now; Update speed ▸ High (0.5 s) / Normal (1 s) / Low (4 s) / Paused. These are Task Manager's four speeds.
 - Out: Minimize on use, Hide when minimized, Set default tab, Show full account name, Show history for all processes, Group by type, Expand all, Collapse all, and "Fewer details".
 - Tabs, in Task Manager's order, showing only the built ones: **Performance**, **Details**. The Processes tab will slot in first when it is built.
@@ -123,6 +123,7 @@ Right-hand pane. Graphs plus the numbers below them, 1:1 with Task Manager. Grap
   - **One graph per logical processor**: 32 graphs in Task Manager's grid layout. This is fixed, not switchable.
   - Each graph also draws kernel time, as Task Manager does with "Show kernel times" on: a second, fainter line over a darker fill. Always on, with no menu to turn it off (owner, 2026-10-24).
   - Numbers: Utilization, Speed, Processes, Threads, Handles, Up time, Base speed, Sockets, Cores, Logical processors, Virtualization, and L1/L2/L3 cache.
+  - **Linux-style CPU %**: new, beyond Task Manager; the owner asked for it on 2026-10-26. It is a check item in the Options menu, off by default and remembered. When it is on, the CPU pane's Utilization and the sidebar's CPU line count 100% for each logical processor, as Linux's `top` does, so the 7950X reads up to 3200%. The number is the `_Total` `% Processor Time` times the number of logical processors, rounded to a whole percent after the multiplication. That counter measures busy time, which boost doesn't inflate, so each processor tops out at 100% and one fully busy thread reads 100%. When it is off, the number is Task Manager's own. Turning it on or off redraws the number at once, also while paused. The graphs, their `100%` caption, Speed and the Details tab don't change.
 - **Memory**:
   - Memory usage graph and the Memory composition bar.
   - Numbers: In use (Compressed), Available, Committed, Cached, Paged pool, Non-paged pool, Speed, Slots used, Form factor, Hardware reserved.
@@ -176,7 +177,7 @@ This is guidance; the builder chooses.
 - **User name**: `OpenProcessToken` → `TokenUser` → `LookupAccountSid`, cached per SID. Task Manager shows the short account name (SYSTEM, LOCAL SERVICE, DWM-1, the owner's user name).
 - **UAC virtualization**: `TokenVirtualizationAllowed` and `TokenVirtualizationEnabled`.
 - **Status "Not responding"**: top-level windows checked with `IsHungAppWindow`, only while the Details tab is showing.
-- **Per-logical-processor CPU**: `SystemProcessorPerformanceInformation` or PDH `Processor Information`. Verified on 2026-10-24 by logging Task Manager's Performance-tab Utilization beside the `Processor Information(_Total)` counters over 60 updates: it follows the frequency-scaled `% Processor Utility` (mean difference 0.53 points), not `% Processor Time` (2.34). The Details CPU column stays on processor time.
+- **Per-logical-processor CPU**: `SystemProcessorPerformanceInformation` or PDH `Processor Information`. Verified on 2026-10-24 by logging Task Manager's Performance-tab Utilization beside the `Processor Information(_Total)` counters over 60 updates: it follows the frequency-scaled `% Processor Utility` (mean difference 0.53 points), not `% Processor Time` (2.34). The Details CPU column stays on processor time, and so does the Linux-style CPU % (4.3), because `top` counts busy time.
 - **Memory**: `GetPerformanceInfo`, `GlobalMemoryStatusEx`, `NtQuerySystemInformation` memory-list info for the composition bar. Speed, slots and form factor come from SMBIOS/WMI, read once at startup.
 - **Disk**: `IOCTL_DISK_PERFORMANCE` per physical drive, or PDH PhysicalDisk. Static info comes from `IOCTL_STORAGE_QUERY_PROPERTY` and volume mapping.
 - **Network**: `GetIfTable2`/`GetIfEntry2` octet counters, plus `GetAdaptersAddresses` for names and IPs.

@@ -23,6 +23,9 @@ internal sealed class AppSettings
 
     public bool AlwaysOnTop { get; set; }
 
+    /// <summary>The Performance tab's CPU utilization as Linux's <c>top</c> counts it, 100% for each logical processor (owner, 2026-10-26).</summary>
+    public bool LinuxStyleCpu { get; set; }
+
     public UpdateSpeed UpdateSpeed { get; set; } = UpdateSpeed.Normal;
 
     public List<ColumnSetting> DetailsColumns { get; set; } = [];

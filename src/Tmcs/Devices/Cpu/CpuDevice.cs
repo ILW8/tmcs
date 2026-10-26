@@ -14,11 +14,21 @@ internal sealed class CpuDevice(ICpuSource source) : Device("cpu", DeviceKind.Cp
     public override string Subtitle => Info.Name;
 
     public double Utilization { get; private set; }
+
+    /// <summary>The total processor time, 0 to 100: busy time, which boost doesn't scale as it scales the utility.</summary>
+    public double ProcessorTime { get; private set; }
+
     public double SpeedMhz { get; private set; }
     public int Processes { get; private set; }
     public int Threads { get; private set; }
     public int Handles { get; private set; }
     public TimeSpan UpTime { get; private set; }
+
+    /// <summary>
+    /// The Utilization number: Task Manager's, or with <paramref name="linuxStyle"/> the processor time as Linux's <c>top</c>
+    /// counts it, 100 for each fully busy logical processor (owner, 2026-10-26).
+    /// </summary>
+    public double ShownUtilization(bool linuxStyle) => linuxStyle ? ProcessorTime * Info.LogicalProcessors : Utilization;
 
     public override void Sample(long time100Ns, IReadOnlyList<RawProcess> snapshot)
     {
@@ -35,7 +45,7 @@ internal sealed class CpuDevice(ICpuSource source) : Device("cpu", DeviceKind.Cp
         Handles = handles;
         UpTime = source.UpTime();
 
-        if (!source.Read(_loads, out var total, out var performance)) return;
+        if (!source.Read(_loads, out var total, out var time, out var performance)) return;
 
         _values[0] = (float)total;
         for (var i = 0; i < _loads.Length; i++)
@@ -46,6 +56,7 @@ internal sealed class CpuDevice(ICpuSource source) : Device("cpu", DeviceKind.Cp
         History.Add(time100Ns, _values);
 
         Utilization = total;
+        ProcessorTime = time;
         SpeedMhz = performance * Info.BaseMhz / 100;
     }
 }

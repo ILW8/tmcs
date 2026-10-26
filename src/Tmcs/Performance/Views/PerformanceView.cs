@@ -18,7 +18,7 @@ internal sealed class PerformanceView : Control
     PerformancePane _visible;
 
     /// <param name="model">The devices the sidebar lists and the panes show.</param>
-    /// <param name="settings">Where the sidebar keeps the hidden adapters.</param>
+    /// <param name="settings">Where the sidebar keeps the hidden adapters, and whether the CPU's utilization is Linux-style.</param>
     public PerformanceView(PerformanceModel model, AppSettings settings)
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
@@ -36,7 +36,7 @@ internal sealed class PerformanceView : Control
         {
             _panes[i] = (DeviceKind)i switch
             {
-                DeviceKind.Cpu => new CpuPane(_fonts),
+                DeviceKind.Cpu => new CpuPane(_fonts, settings),
                 DeviceKind.Memory => new MemoryPane(_fonts),
                 DeviceKind.Disk => new DiskPane(_fonts),
                 DeviceKind.Network => new NetworkPane(_fonts),

@@ -8,13 +8,14 @@ namespace Tmcs.Devices.Cpu;
 
 /// <summary>
 /// Reads <c>% Processor Utility</c> and <c>% Privileged Utility</c> for every logical processor, plus the total
-/// <c>% Processor Performance</c>, from one PDH query that lives as long as the source. Without the counters (PDH disabled or
-/// corrupt) the source still opens, and every read fails.
+/// <c>% Processor Time</c> and <c>% Processor Performance</c>, from one PDH query that lives as long as the source. Without the
+/// counters (PDH disabled or corrupt) the source still opens, and every read fails.
 /// </summary>
 internal sealed unsafe class PdhCpuSource : ICpuSource
 {
     const string UtilityPath = @"\Processor Information(*)\% Processor Utility";
     const string PrivilegedPath = @"\Processor Information(*)\% Privileged Utility";
+    const string TimePath = @"\Processor Information(_Total)\% Processor Time";
     const string PerformancePath = @"\Processor Information(_Total)\% Processor Performance";
     const uint Format = Pdh.FmtDouble | Pdh.FmtNoCap100;
 
@@ -64,7 +65,7 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
 
     /// <summary>0 when the counters couldn't be added.</summary>
     readonly nint _query;
-    readonly nint _utility, _privileged, _performance;
+    readonly nint _utility, _privileged, _time, _performance;
     readonly InstanceMap _utilityMap = new(), _privilegedMap = new();
     readonly PdhArrayBuffer _utilityBuffer = new(), _privilegedBuffer = new();
     bool _collected;
@@ -82,6 +83,7 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
         }
         if (Pdh.PdhAddEnglishCounterW(_query, UtilityPath, 0, out _utility) != Pdh.ErrorSuccess
             || Pdh.PdhAddEnglishCounterW(_query, PrivilegedPath, 0, out _privileged) != Pdh.ErrorSuccess
+            || Pdh.PdhAddEnglishCounterW(_query, TimePath, 0, out _time) != Pdh.ErrorSuccess
             || Pdh.PdhAddEnglishCounterW(_query, PerformancePath, 0, out _performance) != Pdh.ErrorSuccess)
         {
             Pdh.PdhCloseQuery(_query);
@@ -92,9 +94,9 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
 
     public CpuInfo Info { get; }
 
-    public bool Read(Span<CpuLoad> perProcessor, out double totalUtility, out double performancePercent)
+    public bool Read(Span<CpuLoad> perProcessor, out double totalUtility, out double totalTime, out double performancePercent)
     {
-        totalUtility = performancePercent = 0;
+        totalUtility = totalTime = performancePercent = 0;
         if (_disposed || _query == 0 || Pdh.PdhCollectQueryData(_query) != Pdh.ErrorSuccess) return false;
 
         // A rate needs two collects, so the first read has nothing to report yet.
@@ -107,6 +109,8 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
 
         if (!_utilityBuffer.ReadFormatted(_utility, Format, out var utilityCount)) return false;
         if (!_privilegedBuffer.ReadFormatted(_privileged, Format, out var privilegedCount)) return false;
+        if (Pdh.PdhGetFormattedCounterValue(_time, Format, out _, out var time) != Pdh.ErrorSuccess
+            || !IsValid(time.CStatus)) return false;
         if (Pdh.PdhGetFormattedCounterValue(_performance, Format, out _, out var perf) != Pdh.ErrorSuccess
             || !IsValid(perf.CStatus)) return false;
 
@@ -134,6 +138,7 @@ internal sealed unsafe class PdhCpuSource : ICpuSource
             if (processor >= 0 && processor < perProcessor.Length)
                 perProcessor[processor] = perProcessor[processor] with { Privileged = (float)Clamp(item.Value) };
         }
+        totalTime = Clamp(time.Value);
         // Above 100 when the processors boost, so only the lower end is clamped.
         performancePercent = double.IsNaN(perf.Value) ? 0 : Math.Max(0, perf.Value);
         return true;
