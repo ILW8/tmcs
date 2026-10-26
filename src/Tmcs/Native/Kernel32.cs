@@ -32,6 +32,47 @@ internal static unsafe partial class Kernel32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetProcessTimes(nint process, out long creationTime, out long exitTime, out long kernelTime, out long userTime);
 
+    /// <summary><c>PROCESS_TERMINATE</c>.</summary>
+    public const uint ProcessTerminate = 0x0001;
+
+    /// <summary><c>PROCESS_DUP_HANDLE</c>: lets <see cref="DuplicateHandle"/> copy or close the process's handles.</summary>
+    public const uint ProcessDupHandle = 0x0040;
+
+    /// <summary><c>PROCESS_QUERY_INFORMATION</c>: the full query right, which some NT information classes need.</summary>
+    public const uint ProcessQueryInformation = 0x0400;
+
+    public const int ErrorAccessDenied = 5;
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool TerminateProcess(nint process, uint exitCode);
+
+    /// <summary><c>DUPLICATE_CLOSE_SOURCE</c>: close the source handle, in the source process, even if the duplication fails.</summary>
+    public const uint DuplicateCloseSource = 1;
+
+    /// <summary><c>DUPLICATE_SAME_ACCESS</c>: the copy gets the source's access, and the access argument is ignored.</summary>
+    public const uint DuplicateSameAccess = 2;
+
+    /// <param name="targetHandle">Receives the copy, which the caller must <see cref="CloseHandle"/>.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DuplicateHandle(nint sourceProcess, nint sourceHandle, nint targetProcess, out nint targetHandle, uint desiredAccess, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint options);
+
+    public const uint FileTypeDisk = 1;
+    public const uint FileTypePipe = 3;
+
+    /// <returns>A <c>FILE_TYPE_*</c> value: <see cref="FileTypeDisk"/>, 2 for a character device, <see cref="FileTypePipe"/>, or 0 for unknown or failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial uint GetFileType(nint file);
+
+    /// <summary><c>WT_EXECUTELONGFUNCTION</c>: the work item may block for a long time, so the pool may add a thread for it.</summary>
+    public const uint WtExecuteLongFunction = 0x10;
+
+    /// <param name="function">A <c>LPTHREAD_START_ROUTINE</c>. It must not let an exception escape.</param>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool QueueUserWorkItem(delegate* unmanaged<void*, uint> function, void* context, uint flags);
+
     /// <param name="process">A handle with at least <see cref="ProcessQueryLimitedInformation"/>.</param>
     /// <param name="flags">0 for a Win32 path, <c>PROCESS_NAME_NATIVE</c> (1) for a native one.</param>
     /// <param name="name">Receives the path, with a terminator.</param>

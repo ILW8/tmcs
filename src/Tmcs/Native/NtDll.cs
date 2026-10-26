@@ -47,4 +47,60 @@ internal static unsafe partial class NtDll
     /// <returns>An NTSTATUS. Success codes are non-negative.</returns>
     [LibraryImport("ntdll.dll")]
     public static partial int NtQueryInformationProcess(nint process, int infoClass, void* buffer, uint length, out uint returnLength);
+
+    /// <summary><c>ProcessBreakOnTermination</c>: a ULONG, non-zero when the process is critical (ending it stops Windows).</summary>
+    public const int ProcessBreakOnTermination = 29;
+
+    /// <summary><c>ProcessHandleInformation</c>: a <see cref="ProcessHandleSnapshotHead"/> followed by its <see cref="ProcessHandleTableEntry"/> records.</summary>
+    public const int ProcessHandleInformation = 51;
+
+    /// <summary>STATUS_ACCESS_DENIED.</summary>
+    public const int StatusAccessDenied = unchecked((int)0xC0000022);
+
+    /// <summary>STATUS_PROCESS_IS_TERMINATING: the process has exited, or is exiting, and has no handle table left to read.</summary>
+    public const int StatusProcessIsTerminating = unchecked((int)0xC000010A);
+
+    /// <summary>The fixed head of <c>PROCESS_HANDLE_SNAPSHOT_INFORMATION</c>; the entries follow it in the same block.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ProcessHandleSnapshotHead
+    {
+        public nuint NumberOfHandles;
+        public nuint Reserved;
+    }
+
+    /// <summary>A <c>PROCESS_HANDLE_TABLE_ENTRY_INFO</c> (40 bytes on x64).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ProcessHandleTableEntry
+    {
+        /// <summary>The handle's value in the process that owns it.</summary>
+        public nint HandleValue;
+        public nuint HandleCount;
+        public nuint PointerCount;
+        public uint GrantedAccess;
+        public uint ObjectTypeIndex;
+        public uint HandleAttributes;
+        public uint Reserved;
+    }
+
+    /// <summary><c>ObjectTypeInformation</c>: a block that starts with the type's name as a <see cref="UnicodeString"/>, whose characters follow in the same block.</summary>
+    public const int ObjectTypeInformation = 2;
+
+    /// <returns>An NTSTATUS. Success codes are non-negative.</returns>
+    [LibraryImport("ntdll.dll")]
+    public static partial int NtQueryObject(nint handle, int infoClass, void* buffer, uint length, out uint returnLength);
+
+    /// <summary>An <c>IO_STATUS_BLOCK</c>: an NTSTATUS (or pointer) slot, then the byte count.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IoStatusBlock
+    {
+        public nint Status;
+        public nuint Information;
+    }
+
+    /// <summary><c>FileIsRemoteDeviceInformation</c>: one BOOLEAN, non-zero when the file is on a remote device.</summary>
+    public const int FileIsRemoteDeviceInformation = 0x33;
+
+    /// <returns>An NTSTATUS. Success codes are non-negative.</returns>
+    [LibraryImport("ntdll.dll")]
+    public static partial int NtQueryInformationFile(nint file, out IoStatusBlock ioStatus, void* buffer, uint length, int infoClass);
 }

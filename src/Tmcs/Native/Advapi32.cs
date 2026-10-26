@@ -8,6 +8,7 @@ internal static unsafe partial class Advapi32
     public const uint TokenAdjustPrivileges = 0x0020;
 
     public const int TokenUser = 1;
+    public const int TokenElevation = 20;
     public const int TokenVirtualizationAllowed = 23;
     public const int TokenVirtualizationEnabled = 24;
 

@@ -1,0 +1,69 @@
+using Tmcs.Actions;
+using Tmcs.Processes;
+
+namespace Tmcs.Tests.Support;
+
+/// <summary>
+/// Scripted process actions. Every call succeeds unless a test sets a per-PID outcome; <see cref="Calls"/> records each call in order.
+/// <see cref="EndProcessTree"/> walks <see cref="ProcessTree.OrderForEnding"/> and calls <see cref="EndTask"/> on each, like the real one.
+/// </summary>
+internal sealed class FakeProcessActions : IProcessActions
+{
+    /// <summary>What the real <see cref="ProcessActions.EndTask"/> returns when the PID was reused (the identity check failed).</summary>
+    public static readonly ActionOutcome ReusedPid = new(ActionOutcome.EInvalidArg, ShowDialog: true);
+
+    /// <summary>What the real <see cref="ProcessActions.EndTask"/> returns when <c>TerminateProcess</c> is denied after a good open: no dialog.</summary>
+    public static readonly ActionOutcome AccessDenied = new(ActionOutcome.EAccessDenied, ShowDialog: false);
+
+    public bool IsElevated { get; set; }
+
+    public HashSet<int> CriticalPids { get; } = [];
+    public Dictionary<int, ActionOutcome> EndTaskOutcomes { get; } = new();
+    public Dictionary<int, PrioritySet> PriorityOutcomes { get; } = new();
+    public Dictionary<int, AffinityInfo> Affinities { get; } = new();
+    public Dictionary<int, ActionOutcome> AffinityOutcomes { get; } = new();
+
+    public List<(string Action, ProcessIdentity Id)> Calls { get; } = [];
+
+    public bool IsCritical(ProcessIdentity id)
+    {
+        Calls.Add((nameof(IsCritical), id));
+        return CriticalPids.Contains(id.Pid);
+    }
+
+    public ActionOutcome EndTask(ProcessIdentity id)
+    {
+        Calls.Add((nameof(EndTask), id));
+        return EndTaskOutcomes.GetValueOrDefault(id.Pid, ActionOutcome.Success);
+    }
+
+    public ActionOutcome EndProcessTree(ProcessIdentity id, IReadOnlyList<ProcessRow> snapshot)
+    {
+        Calls.Add((nameof(EndProcessTree), id));
+        var first = ActionOutcome.Success;
+        foreach (var each in ProcessTree.OrderForEnding(id, snapshot))
+        {
+            var outcome = EndTask(each);
+            if (outcome.ShowDialog && !first.ShowDialog) first = outcome;
+        }
+        return first;
+    }
+
+    public PrioritySet SetPriority(ProcessIdentity id, ProcessPriority priority)
+    {
+        Calls.Add((nameof(SetPriority), id));
+        return PriorityOutcomes.GetValueOrDefault(id.Pid, new PrioritySet(ActionOutcome.Success, ReadBackMatched: true));
+    }
+
+    public AffinityInfo? GetAffinity(ProcessIdentity id)
+    {
+        Calls.Add((nameof(GetAffinity), id));
+        return Affinities.TryGetValue(id.Pid, out var info) ? info : null;
+    }
+
+    public ActionOutcome SetAffinity(ProcessIdentity id, nuint mask)
+    {
+        Calls.Add((nameof(SetAffinity), id));
+        return AffinityOutcomes.GetValueOrDefault(id.Pid, ActionOutcome.Success);
+    }
+}
