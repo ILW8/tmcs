@@ -81,6 +81,20 @@ internal static unsafe partial class Kernel32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool QueryFullProcessImageNameW(nint process, uint flags, char* name, ref uint size);
 
+    /// <summary><c>FORMAT_MESSAGE_IGNORE_INSERTS</c>: leave <c>%1</c>-style inserts in the text as they are.</summary>
+    public const uint FormatMessageIgnoreInserts = 0x200;
+
+    /// <summary><c>FORMAT_MESSAGE_FROM_SYSTEM</c>: look the message id up in the system's message tables.</summary>
+    public const uint FormatMessageFromSystem = 0x1000;
+
+    /// <param name="language">0 for the default language search.</param>
+    /// <param name="buffer">Receives the message, with a terminator.</param>
+    /// <param name="size">Capacity of <paramref name="buffer"/> in chars.</param>
+    /// <param name="arguments">The inserts' values; 0 with <see cref="FormatMessageIgnoreInserts"/>.</param>
+    /// <returns>The chars written, excluding the terminator, or 0 on failure.</returns>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial uint FormatMessageW(uint flags, nint source, uint messageId, uint language, char* buffer, uint size, nint arguments);
+
     /// <returns>A pseudo handle that needs no closing.</returns>
     [LibraryImport("kernel32.dll")]
     public static partial nint GetCurrentProcess();
