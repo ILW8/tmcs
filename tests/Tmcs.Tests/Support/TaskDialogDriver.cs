@@ -136,12 +136,15 @@ internal sealed unsafe partial class TaskDialogDriver : IDisposable
         return ((int)User32.GetGuiResources(process, User32.GrGdiObjects), (int)User32.GetGuiResources(process, User32.GrUserObjects), self.HandleCount);
     }
 
-    /// <summary>Asserts that each count is within 5 of <paramref name="baseline"/>.</summary>
+    /// <summary>
+    /// Asserts that no count grew by more than 5 over <paramref name="baseline"/>. Growth only: a drop is not a leak, and earlier tests'
+    /// background threads and finalizers can release handles while a loop runs.
+    /// </summary>
     public static void AssertFlat((int Gdi, int User, int Handles) baseline, (int Gdi, int User, int Handles) now)
     {
-        Assert.True(Math.Abs(now.Gdi - baseline.Gdi) <= 5, $"GDI objects went from {baseline.Gdi} to {now.Gdi}");
-        Assert.True(Math.Abs(now.User - baseline.User) <= 5, $"USER objects went from {baseline.User} to {now.User}");
-        Assert.True(Math.Abs(now.Handles - baseline.Handles) <= 5, $"handles went from {baseline.Handles} to {now.Handles}");
+        Assert.True(now.Gdi - baseline.Gdi <= 5, $"GDI objects grew from {baseline.Gdi} to {now.Gdi}");
+        Assert.True(now.User - baseline.User <= 5, $"USER objects grew from {baseline.User} to {now.User}");
+        Assert.True(now.Handles - baseline.Handles <= 5, $"handles grew from {baseline.Handles} to {now.Handles}");
     }
 
     delegate bool EnumChildProc(nint hwnd, nint lParam);

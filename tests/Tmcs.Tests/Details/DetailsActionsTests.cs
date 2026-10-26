@@ -584,27 +584,15 @@ public partial class DetailsActionsTests
         using var rig = new Rig();
         IReadOnlyList<ProcessRow> one = [rig.Row(2)], two = [rig.Row(1), rig.Row(3)];
         for (var i = 0; i < 10; i++) rig.View.PrepareRowMenu(one).Dispose(); // warm up
-        var gdi = GuiResources(User32.GrGdiObjects);
-        var user = GuiResources(User32.GrUserObjects);
-        var handles = HandleCount();
+        var first = TaskDialogDriver.Counts();
 
         for (var i = 0; i < 1000; i++)
         {
             using var menu = rig.View.PrepareRowMenu(i % 2 == 0 ? one : two);
         }
 
-        Assert.InRange((int)GuiResources(User32.GrGdiObjects), (int)gdi - 5, (int)gdi + 5);
-        Assert.InRange((int)GuiResources(User32.GrUserObjects), (int)user - 5, (int)user + 5);
-        Assert.InRange(HandleCount(), handles - 5, handles + 5);
+        TaskDialogDriver.AssertFlat(first, TaskDialogDriver.Counts());
     });
-
-    private static uint GuiResources(uint flags) => User32.GetGuiResources(Kernel32.GetCurrentProcess(), flags);
-
-    private static int HandleCount()
-    {
-        using var self = Process.GetCurrentProcess();
-        return self.HandleCount;
-    }
 
     /// <summary>A right-click on the rows at <paramref name="screen"/>: the list view sends itself this, with wParam = the list.</summary>
     private static void RightClick(ProcessListView list, Point screen) =>
