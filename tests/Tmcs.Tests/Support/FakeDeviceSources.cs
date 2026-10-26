@@ -24,12 +24,12 @@ internal static class FakeDeviceSources
         new FakeGpuSource { Gpus = [Gpu(0x1D8C7)] });
 
     /// <summary>
-    /// The owner's machine, as the sidebar tests need it: disks 0 to 4 (<c>C:</c> to <c>G:</c>), 12 wired adapters (<see cref="A"/>,
-    /// <see cref="B"/> and <see cref="C"/> first, then <see cref="OwnerAdapterGuid"/> 4 to 12, LUID n for adapter n), and one GPU
-    /// with LUID 0x1D8C7.
+    /// The owner's machine, as the sidebar tests need it: the 7950X's 32 logical processors, disks 0 to 4 (<c>C:</c> to <c>G:</c>),
+    /// 12 wired adapters (<see cref="A"/>, <see cref="B"/> and <see cref="C"/> first, then <see cref="OwnerAdapterGuid"/> 4 to 12,
+    /// LUID n for adapter n), and one GPU with LUID 0x1D8C7.
     /// </summary>
     public static DeviceSources CreateOwnerMachine() => new(
-        new FakeCpuSource(),
+        new FakeCpuSource(FakeCpuSource.Ryzen()),
         new FakeMemorySource(),
         new FakeDiskSource { Disks = [.. Enumerable.Range(0, 5).Select(n => Disk(n, (char)('C' + n) + ":"))] },
         new FakeNetworkSource { Adapters = OwnerAdapters(), Counters = new(0, 0, IsUp: true) },

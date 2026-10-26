@@ -1,5 +1,6 @@
 using Tmcs.Devices.Cpu;
 using Tmcs.Performance.Graphs;
+using Tmcs.Settings;
 
 namespace Tmcs.Performance.Views;
 
@@ -23,14 +24,18 @@ internal sealed class CpuPane : PerformancePane
     const int GridSamples = 10;
 
     readonly GraphPainter _painter = new(GraphPalettes.Cpu);
+    readonly AppSettings _settings;
 
     // Refilled for every info block, so that building one allocates only its strings and the layout.
     readonly InfoItem[][] _rows = [new InfoItem[2], new InfoItem[3], new InfoItem[1]];
     readonly StaticRow[] _table = new StaticRow[8];
     readonly Func<string, int> _labelWidth, _valueWidth;
 
-    public CpuPane(PaneFonts fonts) : base(fonts)
+    /// <param name="fonts">The view's fonts, which the view owns.</param>
+    /// <param name="settings">Whether Utilization is Linux-style.</param>
+    public CpuPane(PaneFonts fonts, AppSettings settings) : base(fonts)
     {
+        _settings = settings;
         _labelWidth = LabelWidth;
         _valueWidth = ValueWidth;
     }
@@ -92,7 +97,7 @@ internal sealed class CpuPane : PerformancePane
     InfoLayout BuildInfo(CpuDevice cpu)
     {
         var info = cpu.Info;
-        _rows[0][0] = new InfoItem("Utilization", PerfFormat.Percent(cpu.Utilization));
+        _rows[0][0] = new InfoItem("Utilization", PerfFormat.Percent(cpu.ShownUtilization(_settings.LinuxStyleCpu)));
         _rows[0][1] = new InfoItem("Speed", PerfFormat.Ghz(cpu.SpeedMhz));
         _rows[1][0] = new InfoItem("Processes", Integer(cpu.Processes));
         _rows[1][1] = new InfoItem("Threads", Integer(cpu.Threads));

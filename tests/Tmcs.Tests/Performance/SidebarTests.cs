@@ -171,6 +171,34 @@ public sealed partial class SidebarTests
         Assert.Equal(108, RunStarts(bmp, 26, 15, 80, 200).First(x => x > 100));
     });
 
+    // The owner's Linux-style CPU % (2026-10-26): all 32 processors busy show 3200% where Task Manager's number was 14%. 3200%
+    // is 34 px, so 4.50 GHz starts 5 px after it, at 120, and ends 12 px later than it did from 108: the edge doesn't clip it.
+    [Fact]
+    public void Cpu_line_shows_linux_style_utilization_when_it_is_on() => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Sources.FakeCpu().Total = 14;
+        rig.Sources.FakeCpu().Time = 100;
+        rig.Sample();
+        var sidebar = rig.Sidebar;
+        Assert.True(sidebar.SelectKey("memory")); // so the CPU entry is white
+        using var bmp = new Bitmap(214, 60);
+        using var g = Graphics.FromImage(bmp);
+        sidebar.PaintTo(g, sidebar.ClientRectangle);
+        Assert.Contains(108, RunStarts(bmp, 26, 15, 80, 200));
+        var end = LastInk(bmp, 26, 15, 80, 200);
+
+        rig.Settings.LinuxStyleCpu = true;
+        g.Clear(Color.White);
+        sidebar.PaintTo(g, sidebar.ClientRectangle);
+
+        var starts = RunStarts(bmp, 26, 15, 80, 200);
+        Assert.Equal(81, starts[0]);
+        Assert.Contains(120, starts);
+        Assert.DoesNotContain(108, starts);
+        Assert.Equal(end + 12, LastInk(bmp, 26, 15, 80, 200));
+    });
+
     [Fact]
     public void Hidden_adapters_are_left_out_until_shown() => Sta.Run(() =>
     {
@@ -484,6 +512,18 @@ public sealed partial class SidebarTests
         }
 
         return [.. starts];
+    }
+
+    /// <summary>The last column from <paramref name="left"/> to <paramref name="right"/> with a non-white pixel in the rows, or -1.</summary>
+    static int LastInk(Bitmap bmp, int top, int height, int left, int right)
+    {
+        for (var x = right - 1; x >= left; x--)
+        {
+            for (var y = top; y < top + height; y++)
+                if ((bmp.GetPixel(x, y).ToArgb() & 0xFFFFFF) != 0xFFFFFF) return x;
+        }
+
+        return -1;
     }
 
     static unsafe string[] Texts(NativeMenu menu)

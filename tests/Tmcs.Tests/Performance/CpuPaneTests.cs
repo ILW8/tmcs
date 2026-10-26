@@ -5,6 +5,7 @@ using Tmcs.Devices.Memory;
 using Tmcs.Native;
 using Tmcs.Performance.Views;
 using Tmcs.Processes;
+using Tmcs.Settings;
 using Tmcs.Tests.Devices;
 
 namespace Tmcs.Tests.Performance;
@@ -15,14 +16,11 @@ public sealed class CpuPaneTests
 
     static uint GuiResources(uint flags) => User32.GetGuiResources(Kernel32.GetCurrentProcess(), flags);
 
-    /// <summary>The owner's Ryzen 9 7950X as capture 01 shows it, with <paramref name="processors"/> logical processors.</summary>
-    static CpuInfo Ryzen(int processors = 32) =>
-        new("AMD Ryzen 9 7950X 16-Core Processor ", 4500, 1, 16, processors, "Enabled", 1L << 20, 16L << 20, 64L << 20);
-
     /// <summary>A CPU pane at Task Manager's pane size and 96 DPI, showing a fake CPU.</summary>
     sealed class Rig : IDisposable
     {
         public readonly PaneFonts Fonts = new(96);
+        public readonly AppSettings Settings = AppSettings.CreateDefault();
         public readonly FakeCpuSource Source;
         public readonly CpuDevice Cpu;
         public readonly CpuPane Pane;
@@ -30,9 +28,9 @@ public sealed class CpuPaneTests
 
         public Rig(int processors = 32)
         {
-            Source = new FakeCpuSource(Ryzen(processors));
+            Source = new FakeCpuSource(FakeCpuSource.Ryzen(processors));
             Cpu = new CpuDevice(Source);
-            Pane = new CpuPane(Fonts) { ClientSize = new Size(1052, 575), Device = Cpu };
+            Pane = new CpuPane(Fonts, Settings) { ClientSize = new Size(1052, 575), Device = Cpu };
         }
 
         /// <summary><paramref name="count"/> samples one second apart: 61 fill a graph from border to border.</summary>
@@ -129,7 +127,7 @@ public sealed class CpuPaneTests
         // One pane for every count: the grid follows the device it shows, as it changes.
         foreach (var (processors, columns, rows) in new[] { (16, 6, 3), (8, 4, 2), (1, 1, 1), (32, 8, 4) })
         {
-            rig.Pane.Device = new CpuDevice(new FakeCpuSource(Ryzen(processors)));
+            rig.Pane.Device = new CpuDevice(new FakeCpuSource(FakeCpuSource.Ryzen(processors)));
             rig.Pane.PaintTo(g);
 
             var cells = Enumerable.Range(0, processors).Select(rig.Pane.CellBounds).ToArray();
@@ -180,6 +178,25 @@ public sealed class CpuPaneTests
                 ("Virtualization:", "Enabled"), ("L1 cache:", "1.0 MB"), ("L2 cache:", "16.0 MB"), ("L3 cache:", "64.0 MB"),
             ],
             info.Table.Select(r => (r.Row.Key, r.Row.Value)));
+    });
+
+    // The owner's Linux-style CPU % (2026-10-26) shows the busy time with 100% for each of the 32 processors, rounded after
+    // multiplying: 3.4 × 32 = 108.8. Rounding first would show 96%, and not multiplying 3%.
+    [Theory]
+    [InlineData(false, 3.4, "25%")]
+    [InlineData(true, 3.4, "109%")]
+    [InlineData(true, 100, "3200%")]
+    public void Utilization_is_task_managers_or_linux_style(bool linuxStyle, double time, string shown) => Sta.Run(() =>
+    {
+        using var rig = new Rig();
+        rig.Settings.LinuxStyleCpu = linuxStyle;
+        rig.Source.Total = 25.4;
+        rig.Source.Time = time;
+        rig.Sample(1);
+
+        var utilization = rig.Pane.BuildInfo().Items[0].Item;
+
+        Assert.Equal(("Utilization", shown), (utilization.Label, utilization.Value));
     });
 
     [Fact]
